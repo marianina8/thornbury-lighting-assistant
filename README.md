@@ -1,0 +1,185 @@
+# Thornbury Lighting Assistant
+
+**Demo 7 of the AI workflow portfolio.** A Blender addon plus a Go/AWS backend
+that turns a lighting artist's plain-language note ("snoot the key down so it
+stops spilling on the background, keep it warm") into proposed settings for
+the selected spot light. The artist sees a diff and clicks **Apply** (one
+undo step) or **Discard**. Nothing is ever applied automatically.
+
+![Preset library rendered in Cycles through the addon's own node wiring](docs/img/preset-library.png)
+
+## Who it's for
+
+**Thornbury VFX** is a fictional ~110-person boutique animation/VFX studio. In
+this scenario it moved its lighting and lookdev pipeline to Blender + Cycles to
+keep per-seat licensing costs under control as its episodic workload grew. That
+pressure is real across the industry, but this is **illustrative framing, not a
+documented case study of a real studio.**
+
+The workflow gap is small and constant: a supervisor gives a verbal note, and a
+lighter translates it into numbers (cone angle, blend, power, colour, radius,
+maybe a gobo). This tool shortens that translation step. It doesn't make the
+lighting decision.
+
+## The one rule: the model proposes instrument settings, nothing else
+
+| Step | Who does it |
+|---|---|
+| Read the selected light's real values from `bpy` | **Code** (addon) |
+| Turn the note into proposed values | **Model**: one bounded Bedrock call (Claude Haiku 4.5, text only, 400 output tokens, temperature 0, forced tool call so the answer is always structured JSON) |
+| Convert units, validate, clamp to Blender's real ranges and our policy limits, drop invented presets, report every correction | **Code** (Go, `internal/lightparams`) |
+| Show the diff, let the artist untick or edit rows | **Code** (addon) |
+| Write the values, one undo step | **Code**, only when the artist clicks Apply |
+| Keys, quotas, kill switch, audit log | **Code** |
+
+The model never moves, aims or rotates a light, and never touches the camera,
+composition or other objects. It never judges whether the shot looks good,
+and it never generates an image. Placement or taste notes come back as "out of
+scope" with no changes. Confidence measures how sure it is **which settings
+the note refers to**, not how good the result will look.
+
+## How it fits together
+
+```mermaid
+flowchart LR
+  A[Blender addon<br/>panel + diff] -- note + light state<br/>Bearer key --> G[API Gateway<br/>HTTP API, throttled]
+  G --> L["Lambda (Go)"]
+  L -- kill switch --> S[(SSM parameter)]
+  L -- hashed key, monthly quota,<br/>global daily cap --> K[(DynamoDB keys)]
+  L -- one Converse call --> B[Bedrock<br/>Haiku 4.5]
+  L -- clamp + audit --> D[(DynamoDB audit)]
+  L -- proposal + corrections --> A
+  A -- Apply / Discard / Edited --> L
+  M[CloudWatch alarm<br/>model calls/hour] --> T[SNS] --> KS[kill-switch Lambda] --> S
+```
+
+API: `GET /v1/health`, `GET /v1/me` (usage; no model call),
+`POST /v1/suggest`, `POST /v1/outcome`.
+
+## Guardrails
+
+- **Keys are stored as SHA-256 hashes only.** The plaintext is printed once by
+  `issue-key`. Keys carry 256 bits of randomness.
+- **Per-key monthly cap** (default 50), enforced atomically in DynamoDB.
+  30 concurrent requests against a limit of 10 reserve exactly 10 (tested on
+  DynamoDB emulation).
+- **Global daily cap** (300 calls/day, a template parameter) plus API Gateway
+  throttling (5 req/s, burst 10).
+- **Kill switch:** an SSM parameter created by the template (fails closed and
+  is cached 30 s). `tla-admin pause`/`resume` flip it. A CloudWatch alarm on
+  model calls per hour (default 120) turns it off automatically.
+- **Billing alarm** in us-east-1 (`make billing-alarm`).
+- **Bounded cost per call:** the note is limited to 500 characters, the
+  response to 400 tokens, and there's one call per request. That's roughly
+  $0.003 per suggestion at Haiku 4.5 prices, so a 50-call tester month costs
+  about $0.15.
+- **Failed model calls are refunded** and audited as `model_error`. Invalid
+  requests are rejected before any charge or model call.
+- **Audit trail:** note, current values, raw model output, clamped proposal,
+  corrections, rationale, confidence, tokens, latency, and the outcome
+  (applied / discarded / edited, with the values actually applied). Kept 180
+  days.
+
+## Deploy (run from your own terminal)
+
+This build session can't reach AWS, so these steps are for Marian. Tools:
+Go 1.24+, AWS SAM CLI, AWS CLI, profile `demos-admin`.
+
+```bash
+cd ~/Code/github.com/marianina8/thornbury-lighting-assistant
+go mod tidy && make test                       # fills go.sum test-only entries, runs tests
+
+# One-time: Bedrock model access for Anthropic Claude Haiku 4.5 in us-west-2
+# (Bedrock console > Model access). Fenwick already uses the same profile.
+
+make sam-deploy                                # stack thornbury-lighting-assistant, us-west-2
+make issue-key LABEL=boyfriend-tester LIMIT=50 # prints the backend URL + key ONCE
+make addon-zip                                 # dist/thornbury_lighting-0.1.0.zip
+
+# Optional
+make billing-alarm EMAIL=you@example.com       # us-east-1; enable "Receive CloudWatch billing alerts" first
+aws sns subscribe --topic-arn <UsageAlarmTopic output> --protocol email \
+  --notification-endpoint you@example.com --profile demos-admin --region us-west-2
+```
+
+Send the tester the zip, `docs/tester-guide.md`, `demo/thornbury_demo.blend`,
+and the two lines `issue-key` printed.
+
+Day to day:
+
+```bash
+go run ./cmd/tla-admin keys                    # usage per key
+go run ./cmd/tla-admin audit --n 20            # recent notes, proposals, outcomes
+go run ./cmd/tla-admin pause | resume | status
+go run ./cmd/tla-admin revoke --id <key id>
+go run ./cmd/tla-admin set-limit --id <key id> --limit 100
+```
+
+## Try it locally first (no AWS)
+
+```bash
+make local            # API on http://127.0.0.1:8787 with the mock model; prints a key
+```
+
+Install the zip in Blender, paste `http://127.0.0.1:8787` and the printed key,
+and the whole loop works. The **mock model** is a keyword matcher that labels
+itself "Mock model:" in its rationale. `make local-bedrock` runs the same
+server against real Bedrock with your AWS profile. The local audit trail is at
+`http://127.0.0.1:8787/local/audit`.
+
+## Testing
+
+- `make test`: Go unit and handler tests with the race detector, covering:
+  - clamping against Blender's real ranges;
+  - hostile model output (720° cones, 1e9 W, invented presets, 1,000-word rationales);
+  - quota, revocation, kill switch and global cap;
+  - refunds on model failure, outcome ownership and idempotency.
+  
+  Set `DYNAMO_TEST_ENDPOINT` (e.g. `moto_server`) to run the store contract
+  against DynamoDB semantics as well.
+- `make addon-test`: installs the built zip the way **Install from Disk**
+  does, into a throwaway Blender profile, then runs 16 tests inside real
+  Blender. It covers:
+  - reading and writing the data-block, and client-side clamps;
+  - temperature capability, gobo and IES wiring, preset switching and removal;
+  - custom node trees are never touched, unticked and edited rows, the operator's UNDO flag;
+  - the offline refusal;
+  - an end-to-end Suggest → Apply → outcome-in-audit run against `cmd/local`.
+  
+  Set up the Blender builds once:
+  ```bash
+  python3.11 -m venv .venvs/bpy-4.2 && .venvs/bpy-4.2/bin/pip install bpy==4.2.0
+  python3.13 -m venv .venvs/bpy-5.2 && .venvs/bpy-5.2/bin/pip install bpy==5.2.2 pillow
+  ```
+- `make render-check`: renders every preset in Cycles and checks it has the
+  intended effect, including that IES presets keep the light's exposure.
+- Verified on 2026-09-24 against **Blender 4.2.0, 4.5.14 LTS, 5.0.1, 5.1.2 and
+  5.2.2 LTS**. See [docs/blender-api-verification.md](docs/blender-api-verification.md).
+  Not automated: a real Ctrl+Z in the UI (headless Blender has no undo).
+
+## Repo layout
+
+```
+addon/thornbury_lighting/   the Blender extension (manifest, panel, operators, presets)
+addon/tests/                tests that run inside real Blender builds
+cmd/api                     Lambda binary (HTTP API; HANDLER=killswitch for the alarm target)
+cmd/local                   local server (in-memory store, mock or Bedrock model)
+cmd/issue-key               mint a tester key (hash stored, plaintext shown once)
+cmd/tla-admin               keys, limits, audit, kill switch
+internal/lightparams        Blender ranges, clamping, no-op dropping, kelvin→RGB
+internal/propose            prompt, tool schema, Bedrock call, mock, interpretation
+internal/store              DynamoDB + in-memory stores (same contract tests)
+internal/api                handlers + API Gateway adapter
+internal/presets            embedded preset library (same file ships in the addon)
+infra/                      SAM template, billing alarm
+tools/                      preset generator, zip builder, render checks, demo scene
+demo/thornbury_demo.blend   a key spot spilling onto a back wall (opens in 4.2+)
+docs/                       API verification, tester guide, images
+```
+
+## Licences
+
+The addon (`addon/`) is GPL-3.0-or-later, as Blender requires for add-ons
+that use its Python API. The gobo images and IES profiles are generated by
+`tools/gen_presets.py` (synthetic, not real fixtures) and ship under the
+same licence.

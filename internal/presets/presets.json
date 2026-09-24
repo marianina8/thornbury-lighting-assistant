@@ -1,0 +1,66 @@
+{
+  "version": 1,
+  "presets": [
+    {
+      "id": "gobo_window_blinds",
+      "kind": "gobo",
+      "label": "Window blinds",
+      "file": "gobo_window_blinds.png",
+      "extension": "REPEAT",
+      "use_when": "breaks the beam into horizontal slat shadows, like light through venetian blinds"
+    },
+    {
+      "id": "gobo_window_panes",
+      "kind": "gobo",
+      "label": "Window panes",
+      "file": "gobo_window_panes.png",
+      "extension": "EXTEND",
+      "use_when": "projects a four-pane window frame, like sunlight through a window"
+    },
+    {
+      "id": "gobo_leaf_breakup",
+      "kind": "gobo",
+      "label": "Leaf breakup",
+      "file": "gobo_leaf_breakup.png",
+      "extension": "REPEAT",
+      "use_when": "dappled, broken-up light, like light through foliage; breaks up a flat wash"
+    },
+    {
+      "id": "gobo_soft_iris",
+      "kind": "gobo",
+      "label": "Soft iris",
+      "file": "gobo_soft_iris.png",
+      "extension": "EXTEND",
+      "use_when": "a soft round pool tighter than the cone; a snoot-like cut with a feathered edge"
+    },
+    {
+      "id": "gobo_slot",
+      "kind": "gobo",
+      "label": "Slot (barn doors)",
+      "file": "gobo_slot.png",
+      "extension": "EXTEND",
+      "use_when": "cuts the beam top and bottom into a horizontal band, like closing barn doors"
+    },
+    {
+      "id": "ies_narrow_spot",
+      "kind": "ies",
+      "label": "Narrow spot profile",
+      "file": "ies_narrow_spot.ies",
+      "use_when": "a hot centre with fast falloff inside the cone (about 20 degree beam)"
+    },
+    {
+      "id": "ies_medium_soft",
+      "kind": "ies",
+      "label": "Medium soft profile",
+      "file": "ies_medium_soft.ies",
+      "use_when": "an even beam with a gentle shoulder (about 45 degrees)"
+    },
+    {
+      "id": "ies_wide_flood",
+      "kind": "ies",
+      "label": "Wide flood profile",
+      "file": "ies_wide_flood.ies",
+      "use_when": "broad flood whose brightness rolls off gently toward the edge of a wide cone (about 90 degree field)"
+    }
+  ]
+}

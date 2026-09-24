@@ -1,0 +1,230 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  Thornbury Lighting Assistant (demo 7). A Blender addon sends a lighting note
+  plus the selected spot light's settings; one bounded Bedrock call proposes
+  new settings; Go code clamps them to Blender's ranges; the artist applies or
+  discards. API keys are stored hashed; every request is audited.
+
+Parameters:
+  Stage:
+    Type: String
+    Default: demo
+  ModelId:
+    Type: String
+    Default: us.anthropic.claude-haiku-4-5-20251001-v1:0
+    Description: Bedrock model or cross-region inference-profile id (text-only, Haiku-class).
+  GlobalDailyLimit:
+    Type: Number
+    Default: 300
+    Description: Hard cap on model calls per UTC day across all keys.
+  ModelCallsPerHourAlarm:
+    Type: Number
+    Default: 120
+    Description: If model calls in one hour exceed this, the kill switch turns the assistant off.
+  AuditRetentionDays:
+    Type: Number
+    Default: 180
+
+Globals:
+  Function:
+    Runtime: provided.al2023
+    Architectures: [arm64]
+    Handler: bootstrap
+    MemorySize: 256
+    Tags:
+      app: thornbury-lighting-assistant
+      data: synthetic
+
+Resources:
+  # ----------------------------------------------------------------- data
+  KeysTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - { AttributeName: pk, AttributeType: S }
+      KeySchema:
+        - { AttributeName: pk, KeyType: HASH }
+      TimeToLiveSpecification: { AttributeName: expires_at, Enabled: true } # only the daily global counters expire
+      PointInTimeRecoverySpecification: { PointInTimeRecoveryEnabled: true }
+      SSESpecification: { SSEEnabled: true }
+      Tags:
+        - { Key: app, Value: thornbury-lighting-assistant }
+        - { Key: data, Value: synthetic }
+
+  AuditTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - { AttributeName: request_id, AttributeType: S }
+        - { AttributeName: key_id, AttributeType: S }
+        - { AttributeName: created_at, AttributeType: S }
+      KeySchema:
+        - { AttributeName: request_id, KeyType: HASH }
+      GlobalSecondaryIndexes:
+        - IndexName: by_key
+          KeySchema:
+            - { AttributeName: key_id, KeyType: HASH }
+            - { AttributeName: created_at, KeyType: RANGE }
+          Projection: { ProjectionType: ALL }
+      TimeToLiveSpecification: { AttributeName: expires_at, Enabled: true }
+      SSESpecification: { SSEEnabled: true }
+      Tags:
+        - { Key: app, Value: thornbury-lighting-assistant }
+        - { Key: data, Value: synthetic }
+
+  # The global kill switch. Created here (not by hand) so the API can never
+  # start without it. "true" = on. `tla-admin pause|resume` flips it.
+  KillSwitchParam:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub /thornbury-lighting/${Stage}/enabled
+      Type: String
+      Value: "true"
+      Description: Thornbury Lighting Assistant kill switch (true/false)
+      Tags:
+        app: thornbury-lighting-assistant
+        data: synthetic
+
+  # ------------------------------------------------------------------ API
+  HttpApi:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      StageName: !Ref Stage
+      DefaultRouteSettings:
+        ThrottlingBurstLimit: 10
+        ThrottlingRateLimit: 5
+      Tags:
+        app: thornbury-lighting-assistant
+        data: synthetic
+
+  ApiFunction:
+    Type: AWS::Serverless::Function
+    Metadata:
+      BuildMethod: makefile
+    Properties:
+      FunctionName: !Sub thornbury-lighting-api-${Stage}
+      CodeUri: ../
+      Timeout: 29
+      Environment:
+        Variables:
+          HANDLER: api
+          KEYS_TABLE: !Ref KeysTable
+          AUDIT_TABLE: !Ref AuditTable
+          KILL_SWITCH_PARAM: !Ref KillSwitchParam
+          MODEL_ID: !Ref ModelId
+          GLOBAL_DAILY_LIMIT: !Ref GlobalDailyLimit
+          AUDIT_RETENTION_DAYS: !Ref AuditRetentionDays
+          MODEL_TIMEOUT_SECONDS: "20"
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action: [dynamodb:GetItem, dynamodb:UpdateItem]
+              Resource: !GetAtt KeysTable.Arn
+            - Effect: Allow
+              Action: [dynamodb:PutItem, dynamodb:UpdateItem, dynamodb:GetItem]
+              Resource: !GetAtt AuditTable.Arn
+            - Effect: Allow
+              Action: ssm:GetParameter
+              Resource: !Sub arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter${KillSwitchParam}
+            # Converse uses bedrock:InvokeModel. The cross-region inference
+            # profile routes to US regions, so the underlying foundation model
+            # is allowed in any region, but only when called through this profile.
+            - Effect: Allow
+              Action: bedrock:InvokeModel
+              Resource: !Sub arn:${AWS::Partition}:bedrock:${AWS::Region}:${AWS::AccountId}:inference-profile/${ModelId}
+            - Effect: Allow
+              Action: bedrock:InvokeModel
+              Resource: !Sub arn:${AWS::Partition}:bedrock:*::foundation-model/*
+              Condition:
+                StringEquals:
+                  bedrock:InferenceProfileArn: !Sub arn:${AWS::Partition}:bedrock:${AWS::Region}:${AWS::AccountId}:inference-profile/${ModelId}
+      Events:
+        Health: { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: GET, Path: /v1/health } }
+        Me: { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: GET, Path: /v1/me } }
+        Suggest: { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: POST, Path: /v1/suggest } }
+        Outcome: { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: POST, Path: /v1/outcome } }
+
+  ApiLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${ApiFunction}
+      RetentionInDays: 30
+
+  # ------------------------------------------------------------ guardrails
+  # Usage spike -> SNS -> this function sets the kill switch to "false".
+  KillSwitchFunction:
+    Type: AWS::Serverless::Function
+    Metadata:
+      BuildMethod: makefile
+    Properties:
+      FunctionName: !Sub thornbury-lighting-killswitch-${Stage}
+      CodeUri: ../
+      Timeout: 10
+      Environment:
+        Variables:
+          HANDLER: killswitch
+          KILL_SWITCH_PARAM: !Ref KillSwitchParam
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action: ssm:PutParameter
+              Resource: !Sub arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter${KillSwitchParam}
+      Events:
+        Alarm:
+          Type: SNS
+          Properties: { Topic: !Ref UsageAlarmTopic }
+
+  UsageAlarmTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub thornbury-lighting-usage-${Stage}
+      Tags:
+        - { Key: app, Value: thornbury-lighting-assistant }
+        - { Key: data, Value: synthetic }
+
+  ModelCallsAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub thornbury-lighting-model-calls-${Stage}
+      AlarmDescription: Model calls spiked; the kill switch pauses the assistant. Resume with `tla-admin resume`.
+      Namespace: ThornburyLighting
+      MetricName: ModelCalls
+      Statistic: Sum
+      Period: 3600
+      EvaluationPeriods: 1
+      Threshold: !Ref ModelCallsPerHourAlarm
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref UsageAlarmTopic]
+
+  ApiErrorsAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub thornbury-lighting-api-errors-${Stage}
+      AlarmDescription: The API function is failing (check its logs).
+      Namespace: AWS/Lambda
+      MetricName: Errors
+      Dimensions: [{ Name: FunctionName, Value: !Ref ApiFunction }]
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 5
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+
+Outputs:
+  ApiUrl:
+    Description: Backend URL to paste into the Blender addon's preferences
+    Value: !Sub https://${HttpApi}.execute-api.${AWS::Region}.${AWS::URLSuffix}/${Stage}
+  KeysTable:
+    Value: !Ref KeysTable
+  AuditTable:
+    Value: !Ref AuditTable
+  KillSwitchParam:
+    Value: !Ref KillSwitchParam
+  UsageAlarmTopic:
+    Description: Subscribe your email here to hear when the kill switch fires
+    Value: !Ref UsageAlarmTopic

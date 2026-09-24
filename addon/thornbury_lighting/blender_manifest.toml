@@ -1,0 +1,22 @@
+schema_version = "1.0.0"
+
+id = "thornbury_lighting"
+version = "0.1.0"
+name = "Thornbury Lighting Assistant"
+tagline = "Turn a lighting note into spot light settings you approve"
+maintainer = "Marian Montagnino"
+type = "add-on"
+
+blender_version_min = "4.2.0"
+
+license = ["SPDX:GPL-3.0-or-later"]
+copyright = ["2026 Marian Montagnino"]
+
+tags = ["Lighting"]
+
+[permissions]
+network = "Sends your note and light settings to the assistant backend"
+files = "Loads bundled gobo images and IES profiles"
+
+[build]
+paths_exclude_pattern = ["__pycache__/", "*.pyc", "/.git/"]

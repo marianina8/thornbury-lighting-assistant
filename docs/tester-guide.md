@@ -1,0 +1,51 @@
+# Trying the Thornbury Lighting Assistant (tester guide)
+
+You need **Blender 4.2 or newer** (free, blender.org) and the two things Marian
+sent you: a **backend URL** and an **API key** (starts with `tla_`).
+
+## 1. Install (about 2 minutes)
+
+1. Download `thornbury_lighting-0.1.0.zip`. Don't unzip it.
+2. In Blender: **Edit > Preferences > Get Extensions** (or **Add-ons**), open the
+   **⌄** menu at the top right, choose **Install from Disk…**, and pick the zip.
+3. Still in Preferences, open **System > Network** and make sure
+   **Allow Online Access** is ticked. The addon needs it to reach the backend.
+4. Back under **Add-ons**, expand **Thornbury Lighting Assistant**, paste the
+   **Backend URL** and **API key**, and click **Test Connection**. You should
+   see "✓ Connected as … 0 of 50 used this month".
+
+## 2. Try it
+
+1. Open `thornbury_demo.blend` (or any scene with a spot light) and select the
+   spot light called **Key**.
+2. Find the panel either in **Properties > Light (green bulb tab) > Lighting
+   Note Assistant**, or in the 3D view sidebar (**N**) under the **Thornbury** tab.
+3. Type a note, e.g. *snoot the key down so it stops spilling on the
+   background, keep it warm*, and click **Suggest**.
+4. You'll see the current and proposed values side by side, a one-line
+   reason and a confidence. **Nothing changes until you click Apply.** You
+   can untick a row or edit a proposed value first.
+5. Click **Apply**, then render (F12) to see it. **Ctrl+Z** undoes the whole
+   suggestion in one step. Or click **Discard**.
+
+Good notes to try: "feather the edge", "half a stop down", "softer shadows",
+"warm it up", "break it up like light through leaves", "cut it into a slot
+like barn doors", "remove the gobo". It deliberately refuses placement or taste
+notes ("move the key left", "make it more cinematic"): it only sets the
+light's own controls.
+
+Gobo and IES presets only show up in **Cycles** renders.
+
+## 3. What gets sent
+
+Your note plus the selected light's cone, blend, power, colour, temperature,
+radius, square setting and preset name. Nothing else from your scene, and no
+images. Each suggestion is logged (note, values, what you did with it) so
+Marian can see how the tool is used. You get 50 suggestions a month; the panel
+shows how many you've used.
+
+## 4. One thing to check for Marian
+
+Please confirm **Ctrl+Z right after Apply puts the light back exactly** (cone,
+power and any gobo). That's the one behaviour the automated tests can't cover,
+because headless Blender has no undo.

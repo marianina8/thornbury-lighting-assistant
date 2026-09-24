@@ -1,0 +1,6 @@
+dist/
+.aws-sam/
+.venvs/
+__pycache__/
+*.pyc
+/bootstrap

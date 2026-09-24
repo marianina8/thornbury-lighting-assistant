@@ -1,0 +1,41 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  Account-level billing alarm for the Thornbury Lighting Assistant demo.
+  Billing metrics only exist in us-east-1, so deploy this stack there
+  (make billing-alarm EMAIL=you@example.com). Requires "Receive CloudWatch
+  billing alerts" to be switched on once in the Billing console preferences.
+
+Parameters:
+  Email:
+    Type: String
+    Description: Where to send the alert (confirm the SNS subscription email).
+  ThresholdUSD:
+    Type: Number
+    Default: 10
+
+Resources:
+  Topic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: thornbury-lighting-billing
+      Subscription:
+        - { Protocol: email, Endpoint: !Ref Email }
+      Tags:
+        - { Key: app, Value: thornbury-lighting-assistant }
+        - { Key: data, Value: synthetic }
+
+  BillingAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: thornbury-lighting-estimated-charges
+      AlarmDescription: Estimated monthly AWS charges passed the threshold. Pause the assistant with `tla-admin pause` if it's this demo.
+      Namespace: AWS/Billing
+      MetricName: EstimatedCharges
+      Dimensions: [{ Name: Currency, Value: USD }]
+      Statistic: Maximum
+      Period: 21600
+      EvaluationPeriods: 1
+      Threshold: !Ref ThresholdUSD
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref Topic]

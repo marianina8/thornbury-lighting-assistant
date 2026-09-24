@@ -68,7 +68,7 @@ geometric mean), giving a centre gain of 1.03 on 4.x and 0.95 on 5.x
 ## How to re-run
 
 ```
-make addon-test      # installs dist/*.zip like "Install from Disk", 16 tests per version (1 skipped: undo)
+make addon-test      # installs dist/*.zip like "Install from Disk", 26 tests per version (undo skipped; 3 skipped without a backend)
 make render-check    # Cycles renders of every preset, 20 checks per version
 ```
 

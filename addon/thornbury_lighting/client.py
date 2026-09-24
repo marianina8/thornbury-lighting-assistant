@@ -5,6 +5,7 @@ Blender), and no bpy imports, so it can run on a worker thread."""
 import json
 import ssl
 import urllib.error
+import urllib.parse
 import urllib.request
 
 USER_AGENT = "thornbury-lighting-addon"
@@ -28,10 +29,27 @@ def _ssl_context():
         return ssl.create_default_context()
 
 
-def _request(method, base_url, path, api_key, body=None, timeout=25):
+LOCAL_HOSTS = {"127.0.0.1", "localhost", "::1"}
+
+
+def check_url(base_url):
+    """https anywhere; plain http only to this machine (the key is a secret)."""
     base_url = (base_url or "").strip().rstrip("/")
-    if not base_url.startswith(("https://", "http://127.0.0.1", "http://localhost")):
-        raise BackendError("The backend URL must start with https:// (or be a local http://127.0.0.1 address).")
+    try:
+        u = urllib.parse.urlsplit(base_url)
+        host = u.hostname
+        u.port  # raises ValueError on a malformed port
+    except ValueError:
+        host = None
+    ok = host and not u.username and not u.password and "@" not in u.netloc and (
+        u.scheme == "https" or (u.scheme == "http" and host in LOCAL_HOSTS))
+    if not ok:
+        raise BackendError("The backend URL must start with https:// (or be http://127.0.0.1 for local testing).")
+    return base_url
+
+
+def _request(method, base_url, path, api_key, body=None, timeout=35):
+    base_url = check_url(base_url)
     data = None if body is None else json.dumps(body).encode("utf-8")
     req = urllib.request.Request(base_url + path, data=data, method=method)
     req.add_header("User-Agent", USER_AGENT)
@@ -65,7 +83,7 @@ def me(base_url, api_key, timeout=15):
     return _request("GET", base_url, "/v1/me", api_key, timeout=timeout)
 
 
-def suggest(base_url, api_key, payload, timeout=25):
+def suggest(base_url, api_key, payload, timeout=35):
     return _request("POST", base_url, "/v1/suggest", api_key, payload, timeout=timeout)
 
 

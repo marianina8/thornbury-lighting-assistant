@@ -7,8 +7,11 @@
 //
 // Order of checks in /v1/suggest, cheapest first: kill switch, key, request
 // validation, per-key monthly quota, global daily cap, then the one model
-// call. A failed model call is refunded, so testers are never charged for
-// our errors.
+// call. The global daily cap counts every model call attempt and is never
+// refunded (it is the cost guardrail). A key is refunded only when a failed
+// call can't have been billed (no tokens reported and no timeout), so testers
+// aren't charged for our outages but a note that reliably breaks the model
+// can't be replayed for free. Rejections are logged; model calls are audited.
 package api
 
 import (
@@ -177,6 +180,7 @@ type SuggestResponse struct {
 func (s *Server) suggest(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	if !s.Switch.Enabled(ctx) {
+		s.Log.Info("rejected", "reason", "paused")
 		fail(w, http.StatusServiceUnavailable, "paused", "The lighting assistant is paused by its owner. Try again later.")
 		return
 	}
@@ -214,15 +218,21 @@ func (s *Server) suggest(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusUnauthorized, "unauthorized", "Missing or invalid API key.")
 		return
 	case res == store.QuotaExceeded:
+		s.Log.Info("rejected", "reason", "quota", "key_id", keys.ID(k.Hash))
 		fail(w, http.StatusTooManyRequests, "quota", fmt.Sprintf("This key has used its %d suggestions for %s. The count resets on %s.", k.MonthlyLimit, period, nextPeriodStart(now)))
 		return
 	}
 	day := store.Day(now)
-	if okGlobal, err := s.Store.ReserveGlobal(ctx, day, s.GlobalDailyLimit, now.Add(72*time.Hour)); err != nil || !okGlobal {
+	okGlobal, err := false, error(nil)
+	if s.GlobalDailyLimit > 0 {
+		okGlobal, err = s.Store.ReserveGlobal(ctx, day, s.GlobalDailyLimit, now.Add(72*time.Hour))
+	}
+	if err != nil || !okGlobal {
 		_ = s.Store.Refund(ctx, k.Hash, period)
 		if err != nil {
 			s.Log.Error("reserve global", "err", err)
 		}
+		s.Log.Warn("rejected", "reason", "global_daily_cap", "key_id", keys.ID(k.Hash))
 		fail(w, http.StatusServiceUnavailable, "capacity", "The assistant has reached today's overall limit. Try again tomorrow; this didn't count against your key.")
 		return
 	}
@@ -247,12 +257,17 @@ func (s *Server) suggest(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if merr != nil {
-		_ = s.Store.Refund(ctx, k.Hash, period)
-		_ = s.Store.RefundGlobal(ctx, day)
+		billed := use.InputTokens > 0 || use.OutputTokens > 0 || errors.Is(merr, context.DeadlineExceeded)
+		msg := "The model call failed, so there's no suggestion. This didn't count against your key; try again."
+		if billed {
+			msg = "The model's answer couldn't be used, so there's no suggestion. Try rewording the note."
+		} else {
+			_ = s.Store.Refund(ctx, k.Hash, period)
+		}
 		audit.Status, audit.Error = store.StatusModelError, trunc(merr.Error(), 500)
 		s.saveAudit(ctx, audit)
-		s.Log.Error("model call failed", "request_id", reqID, "err", merr)
-		fail(w, http.StatusBadGateway, "model_error", "The model call failed, so there's no suggestion. This didn't count against your key; try again.")
+		s.Log.Error("model call failed", "request_id", reqID, "billed", billed, "err", merr)
+		fail(w, http.StatusBadGateway, "model_error", msg)
 		return
 	}
 

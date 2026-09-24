@@ -130,8 +130,8 @@ func (d *Dynamo) ReserveGlobal(ctx context.Context, day string, limit int, expir
 		TableName:                 &d.KeysTable,
 		Key:                       map[string]types.AttributeValue{"pk": s("global#" + day)},
 		UpdateExpression:          aws.String("ADD calls :one SET expires_at = :exp"),
-		ConditionExpression:       aws.String("attribute_not_exists(calls) OR calls < :limit"),
-		ExpressionAttributeValues: map[string]types.AttributeValue{":one": n(1), ":limit": n(int64(limit)), ":exp": n(expires.Unix())},
+		ConditionExpression:       aws.String(":limit > :zero AND (attribute_not_exists(calls) OR calls < :limit)"),
+		ExpressionAttributeValues: map[string]types.AttributeValue{":one": n(1), ":zero": n(0), ":limit": n(int64(limit)), ":exp": n(expires.Unix())},
 	})
 	if isCCF(err) {
 		return false, nil

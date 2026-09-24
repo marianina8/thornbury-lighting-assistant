@@ -24,7 +24,8 @@ sent you: a **backend URL** and an **API key** (starts with `tla_`).
    background, keep it warm*, and click **Suggest**.
 4. You'll see the current and proposed values side by side, a one-line
    reason and a confidence. **Nothing changes until you click Apply.** You
-   can untick a row or edit a proposed value first.
+   can untick a row or edit a proposed value first. (While it's thinking,
+   **Cancel** stops waiting.)
 5. Click **Apply**, then render (F12) to see it. **Ctrl+Z** undoes the whole
    suggestion in one step. Or click **Discard**.
 

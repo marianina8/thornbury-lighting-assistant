@@ -159,27 +159,77 @@ def sanitize(values, light):
     return out
 
 
+SCALARS = ("spot_size", "spot_blend", "energy", "shadow_soft_size", "use_square", "temperature", "use_temperature")
+
+
 def apply_values(light, values):
-    """Write values into the light data-block. Call from an operator with the
-    UNDO flag so a single Ctrl+Z reverts the whole suggestion."""
+    """Write values into the light data-block, all or nothing. Call from an
+    operator with the UNDO flag so a single Ctrl+Z reverts the whole suggestion.
+
+    Everything that can fail (preset checks, loading the image or IES file) is
+    done before the first write; if anything still fails, every value and the
+    previous preset are put back before the error is raised."""
     if light.type != "SPOT":
         raise ValueError("Only spot lights are supported.")
     v = sanitize(values, light)
-    if "preset" in v and v["preset"] != preset_state(light) and preset_state(light) == "custom":
-        raise ValueError("This light has a hand-built node tree; the assistant won't rewire it.")
-    for field in ("spot_size", "spot_blend", "energy", "shadow_soft_size", "use_square", "temperature", "use_temperature"):
-        if field in v:
-            setattr(light, field, v[field])
-    if "color" in v:
-        light.color = v["color"]
-    if "preset" in v:
-        set_preset(light, v["preset"])
-    elif preset_state(light) in LIBRARY:
-        _update_gobo_scale(light)  # keep a gobo filling the (possibly new) cone
+    before_preset = preset_state(light)
+    new_preset = v.get("preset")
+    if new_preset == before_preset:
+        new_preset = None
+    if new_preset is not None:
+        if before_preset == "custom":
+            raise ValueError("This light has a hand-built node tree; the assistant won't rewire it.")
+        if new_preset != "none":
+            _check_tree_buildable(light)
+            _resource(LIBRARY[new_preset])  # load the file now, so a missing file fails before any write
+
+    snapshot = {f: getattr(light, f) for f in SCALARS if hasattr(light, f)}
+    snapshot_color = tuple(light.color)
+    try:
+        for field in SCALARS:
+            if field in v:
+                setattr(light, field, v[field])
+        if "color" in v:
+            light.color = v["color"]
+        if new_preset is not None:
+            set_preset(light, new_preset)
+        elif preset_state(light) in LIBRARY:
+            _update_gobo_scale(light)  # keep a gobo filling the (possibly new) cone
+    except Exception:
+        for f, val in snapshot.items():
+            setattr(light, f, val)
+        light.color = snapshot_color
+        try:
+            set_preset(light, before_preset if before_preset in LIBRARY else "none")
+        except Exception:
+            pass
+        raise
     return v
 
 
 # ------------------------------------------------------------------- presets
+
+def _check_tree_buildable(light):
+    nt = light.node_tree
+    if nt is None or len(nt.nodes) == 0:
+        return  # Blender creates (or we add) the default nodes
+    em, out = _emission_and_output(nt)
+    if em is None or out is None:
+        raise ValueError("The light's node tree has no single Emission -> Light Output pair.")
+
+
+def _ensure_default_nodes(nt):
+    """An emptied light tree gets Blender's default Emission -> Light Output."""
+    if len(nt.nodes) == 0:
+        em = nt.nodes.new("ShaderNodeEmission")
+        out = nt.nodes.new("ShaderNodeOutputLight")
+        out.location = (300, 0)
+        nt.links.new(em.outputs[0], out.inputs[0])
+
+
+def _resource(preset):
+    return _image(preset) if preset["kind"] == "gobo" else _ies_text(preset)
+
 
 def _remove_our_nodes(light):
     nt = light.node_tree
@@ -223,6 +273,7 @@ def set_preset(light, preset_id):
         light[PREV_NODES_KEY] = _use_nodes(light)
     _set_use_nodes(light, True)
     _remove_our_nodes(light)
+    _ensure_default_nodes(light.node_tree)
     em, out = _emission_and_output(light.node_tree)
     if em is None or out is None:
         raise ValueError("The light's node tree has no single Emission -> Light Output pair.")

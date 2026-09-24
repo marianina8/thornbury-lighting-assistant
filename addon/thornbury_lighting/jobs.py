@@ -31,7 +31,8 @@ def run(fn, on_done):
 
     threading.Thread(target=work, name="tla-request", daemon=True).start()
     if not bpy.app.timers.is_registered(poll):
-        bpy.app.timers.register(poll, first_interval=POLL_SECONDS)
+        # persistent: keep delivering (and draining) results across file loads.
+        bpy.app.timers.register(poll, first_interval=POLL_SECONDS, persistent=True)
 
 
 def poll():

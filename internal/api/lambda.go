@@ -27,6 +27,16 @@ func LambdaAdapter(h http.Handler) func(context.Context, events.APIGatewayV2HTTP
 		if path == "" {
 			path = ev.RequestContext.HTTP.Path
 		}
+		// With a named stage (ours is "demo"), API Gateway HTTP APIs put the
+		// stage at the front of rawPath: /demo/v1/suggest. Routes don't include it.
+		if st := ev.RequestContext.Stage; st != "" && st != "$default" {
+			if p := "/" + st; path == p || strings.HasPrefix(path, p+"/") {
+				path = strings.TrimPrefix(path, p)
+				if path == "" {
+					path = "/"
+				}
+			}
+		}
 		url := path
 		if ev.RawQueryString != "" {
 			url += "?" + ev.RawQueryString

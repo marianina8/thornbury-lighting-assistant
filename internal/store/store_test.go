@@ -128,6 +128,10 @@ func suite(t *testing.T, mk func(t *testing.T) Store) {
 		if ok, _ := s.ReserveGlobal(ctx, "2026-09-25", 2, t0); !ok {
 			t.Fatal("new day should start fresh")
 		}
+		// Regression: a limit of 0 must allow nothing (Dynamo used to allow the first call).
+		if ok, _ := s.ReserveGlobal(ctx, "2026-09-26", 0, t0); ok {
+			t.Fatal("limit 0 must refuse")
+		}
 	})
 
 	t.Run("outcome once, by the owner, only for proposals", func(t *testing.T) {

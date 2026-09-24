@@ -22,6 +22,8 @@ github.com/aws/aws-sdk-go-v2/service/bedrockruntime v1.47.1 h1:xryaVPvLLcCf7Y/4b
 github.com/aws/aws-sdk-go-v2/service/bedrockruntime v1.47.1/go.mod h1:ckSglleOJ2avj81L6vBb70nK51cnhTwvVK1SkLgFtj4=
 github.com/aws/aws-sdk-go-v2/service/cloudformation v1.71.4 h1:9dwMueqbHIp0KTw2Zt0rhVobiPMlAI8UgyxiaBzM+1E=
 github.com/aws/aws-sdk-go-v2/service/cloudformation v1.71.4/go.mod h1:R4SVh77rxRZut8uzbNhnXcwA5m99OT4hqhHkZjh5NAk=
+github.com/aws/aws-sdk-go-v2/service/cloudwatch v1.53.0 h1:XY6wKzfriEF+V8bFYFi1S3i8ly+Zetq/RuPyaGdMMzE=
+github.com/aws/aws-sdk-go-v2/service/cloudwatch v1.53.0/go.mod h1:zUms+kt0awoSYh/MwI9d3AV5xMHIDRf7I736b1Drw/k=
 github.com/aws/aws-sdk-go-v2/service/dynamodb v1.53.5 h1:mSBrQCXMjEvLHsYyJVbN8QQlcITXwHEuu+8mX9e2bSo=
 github.com/aws/aws-sdk-go-v2/service/dynamodb v1.53.5/go.mod h1:eEuD0vTf9mIzsSjGBFWIaNQwtH5/mzViJOVQfnMY5DE=
 github.com/aws/aws-sdk-go-v2/service/dynamodbstreams v1.32.9 h1:mB79k/ZTxQL4oDPxLAf2rhcUEvXlHkj3loGA2O9xREk=

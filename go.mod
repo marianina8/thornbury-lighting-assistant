@@ -10,6 +10,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue v1.20.29
 	github.com/aws/aws-sdk-go-v2/service/bedrockruntime v1.47.1
 	github.com/aws/aws-sdk-go-v2/service/cloudformation v1.71.4
+	github.com/aws/aws-sdk-go-v2/service/cloudwatch v1.53.0
 	github.com/aws/aws-sdk-go-v2/service/dynamodb v1.53.5
 	github.com/aws/aws-sdk-go-v2/service/ssm v1.67.7
 )

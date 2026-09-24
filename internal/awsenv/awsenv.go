@@ -11,7 +11,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/cloudformation"
 )
 
-// Defaults for this repo (see infra/samconfig.toml).
+// Defaults for this repo (the same values the Makefile passes to sam deploy).
 const (
 	DefaultStack   = "thornbury-lighting-assistant"
 	DefaultProfile = "demos-admin"

@@ -81,8 +81,31 @@ func TestEnergyNeverNegativeAndStepLimited(t *testing.T) {
 		t.Fatalf("clamping -3 to 0 on a 0 W light should be a dropped no-op, got %v", *out.Energy)
 	}
 	out, _ = Clamp(cur, Capabilities{}, Proposal{Energy: fp(5e7)}, lib)
-	if *out.Energy != EnergyMax {
-		t.Fatalf("energy max: got %v", *out.Energy)
+	if *out.Energy != EnergyFromOffMax {
+		t.Fatalf("turning an off light on is capped at %v, got %v", EnergyFromOffMax, *out.Energy)
+	}
+}
+
+// Regression (review #6): the step window used to be skipped for lights at or
+// below 0 W, and inverted above 4 MW (lo > hi), letting a value exceed EnergyMax.
+func TestEnergyEdges(t *testing.T) {
+	cur := base()
+	cur.Energy = -50
+	out, _ := Clamp(cur, Capabilities{}, Proposal{Energy: fp(1e6)}, lib)
+	if *out.Energy != EnergyFromOffMax {
+		t.Fatalf("negative light: %v", *out.Energy)
+	}
+	cur.Energy = 5e6 // above the policy max (Blender allows it)
+	for _, req := range []float64{1e9, 2e6, 1} {
+		out, adj := Clamp(cur, Capabilities{}, Proposal{Energy: fp(req)}, lib)
+		if *out.Energy > EnergyMax || *out.Energy < 0 {
+			t.Fatalf("req %v on a 5 MW light gave %v", req, *out.Energy)
+		}
+		for _, a := range adj {
+			if strings.Contains(a.Reason, "1.25e+06–1e+06") {
+				t.Fatalf("inverted range in message: %s", a.Reason)
+			}
+		}
 	}
 }
 

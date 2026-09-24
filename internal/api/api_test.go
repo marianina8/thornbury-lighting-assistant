@@ -222,11 +222,56 @@ func TestModelErrorIsRefundedAndAudited(t *testing.T) {
 	}
 	k, _ := e.st.GetKey(context.Background(), keys.Hash(e.key))
 	if k.Used != 0 {
-		t.Fatal("failed call was charged")
+		t.Fatal("an unbilled failure was charged to the key")
 	}
 	as, _ := e.st.RecentAudit(context.Background(), "", 5)
 	if len(as) != 1 || as[0].Status != store.StatusModelError || as[0].Error == "" {
 		t.Fatalf("model error not audited: %+v", as)
+	}
+}
+
+type billedFailure struct{}
+
+func (billedFailure) ID() string { return "billed-failure" }
+func (billedFailure) Propose(context.Context, propose.Input) (propose.Output, propose.Usage, error) {
+	return propose.Output{}, propose.Usage{InputTokens: 900, OutputTokens: 400}, errors.New("tool input truncated")
+}
+
+// Regression: failures after the model was billed used to be refunded from
+// both the key and the global cap, so they could be replayed for free.
+func TestBilledFailuresStillCount(t *testing.T) {
+	e := setup(t, 2, billedFailure{})
+	e.srv.GlobalDailyLimit = 3
+	codes := []int{}
+	for i := 0; i < 5; i++ {
+		rec, _ := e.do("POST", "/v1/suggest", e.key, suggestBody("tighten"))
+		codes = append(codes, rec.Code)
+	}
+	if e.model.calls != 2 {
+		t.Fatalf("model reached %d times; the key limit of 2 should stop it (codes %v)", e.model.calls, codes)
+	}
+	if codes[2] != http.StatusTooManyRequests {
+		t.Fatalf("third call should hit the key quota: %v", codes)
+	}
+}
+
+func TestGlobalCapCountsUnbilledFailuresToo(t *testing.T) {
+	e := setup(t, 50, &propose.Mock{Err: errors.New("throttled")})
+	e.srv.GlobalDailyLimit = 2
+	for i := 0; i < 5; i++ {
+		e.do("POST", "/v1/suggest", e.key, suggestBody("tighten"))
+	}
+	if e.model.calls != 2 {
+		t.Fatalf("global cap should bound model attempts: %d", e.model.calls)
+	}
+}
+
+func TestZeroGlobalLimitAllowsNothing(t *testing.T) {
+	e := setup(t, 50, nil)
+	e.srv.GlobalDailyLimit = 0
+	rec, _ := e.do("POST", "/v1/suggest", e.key, suggestBody("tighten"))
+	if rec.Code != http.StatusServiceUnavailable || e.model.calls != 0 {
+		t.Fatalf("%d calls=%d", rec.Code, e.model.calls)
 	}
 }
 
@@ -308,6 +353,29 @@ func TestLambdaAdapter(t *testing.T) {
 	}
 	if resp.Headers["Content-Type"] != "application/json" {
 		t.Fatalf("headers: %v", resp.Headers)
+	}
+}
+
+// Regression: with the named "demo" stage, API Gateway sends rawPath
+// "/demo/v1/..." and every route 404'd.
+func TestLambdaAdapterStripsNamedStage(t *testing.T) {
+	e := setup(t, 50, nil)
+	for _, tc := range []struct {
+		stage, path string
+		want        int
+	}{
+		{"demo", "/demo/v1/health", 200},
+		{"demo", "/v1/health", 200},
+		{"$default", "/v1/health", 200},
+		{"demo", "/demonstration/v1/health", 404},
+	} {
+		ev := events.APIGatewayV2HTTPRequest{RawPath: tc.path}
+		ev.RequestContext.Stage = tc.stage
+		ev.RequestContext.HTTP.Method = "GET"
+		resp, _ := LambdaAdapter(e.h)(context.Background(), ev)
+		if resp.StatusCode != tc.want {
+			t.Fatalf("stage %q path %q: got %d want %d", tc.stage, tc.path, resp.StatusCode, tc.want)
+		}
 	}
 }
 

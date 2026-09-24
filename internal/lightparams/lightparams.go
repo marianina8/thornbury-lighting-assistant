@@ -36,6 +36,9 @@ const (
 	// A single suggestion may change power by at most two stops either way.
 	// Bigger moves are still possible, one reviewed step at a time.
 	EnergyMaxStepRatio = 4.0
+	// A light that is currently off (0 W or negative) has no reference for
+	// the step rule; a suggestion may turn it on to at most this.
+	EnergyFromOffMax = 1000.0
 	ColorChannelMin    = 0.0 // RNA hard_min
 	ColorChannelMax    = 1.0 // RNA soft_max; values above 1 are legal in Blender but never proposed.
 	ShadowSoftSizeMax  = 100.0 // RNA soft_max (metres)
@@ -172,16 +175,15 @@ func Clamp(cur Light, caps Capabilities, in Proposal, validPreset PresetValidato
 
 	if in.Energy != nil {
 		lo, hi := EnergyMin, float64(EnergyMax)
-		why := "power limited to 0–1,000,000 W"
+		var why string
 		if cur.Energy > 0 {
-			stepLo, stepHi := cur.Energy/EnergyMaxStepRatio, cur.Energy*EnergyMaxStepRatio
-			if stepLo > lo {
-				lo = stepLo
-			}
-			if stepHi < hi {
-				hi = stepHi
-			}
-			why = fmt.Sprintf("one suggestion may change power by at most 2 stops (%s–%s W)", f(lo), f(hi))
+			lo = math.Max(lo, cur.Energy/EnergyMaxStepRatio)
+			hi = math.Min(hi, cur.Energy*EnergyMaxStepRatio)
+			lo = math.Min(lo, hi) // a light above the policy max can still only go down to it
+			why = fmt.Sprintf("power limited to 2 stops per suggestion and 0–1,000,000 W (%s–%s W)", f(lo), f(hi))
+		} else {
+			hi = EnergyFromOffMax
+			why = "the light is off, so a suggestion may turn it on to at most 1000 W"
 		}
 		out.Energy = num("energy", in.Energy, lo, hi, why)
 	}

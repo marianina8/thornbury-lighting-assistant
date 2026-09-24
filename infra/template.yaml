@@ -4,7 +4,8 @@ Description: >
   Thornbury Lighting Assistant (demo 7). A Blender addon sends a lighting note
   plus the selected spot light's settings; one bounded Bedrock call proposes
   new settings; Go code clamps them to Blender's ranges; the artist applies or
-  discards. API keys are stored hashed; every request is audited.
+  discards. API keys are stored hashed; every request that reaches the model is
+  audited in DynamoDB, and rejected requests are logged to CloudWatch.
 
 Parameters:
   Stage:
@@ -13,11 +14,11 @@ Parameters:
   ModelId:
     Type: String
     Default: us.anthropic.claude-haiku-4-5-20251001-v1:0
-    Description: Bedrock model or cross-region inference-profile id (text-only, Haiku-class).
+    Description: Bedrock cross-region inference-profile id (text-only, Haiku-class). The IAM policy grants this profile only; a bare foundation-model id would be denied.
   GlobalDailyLimit:
     Type: Number
     Default: 300
-    Description: Hard cap on model calls per UTC day across all keys.
+    Description: Hard cap on model call attempts per UTC day across all keys (failed calls count too; 0 disables the assistant).
   ModelCallsPerHourAlarm:
     Type: Number
     Default: 120
@@ -228,3 +229,6 @@ Outputs:
   UsageAlarmTopic:
     Description: Subscribe your email here to hear when the kill switch fires
     Value: !Ref UsageAlarmTopic
+  ModelCallsAlarmName:
+    Description: Reset to OK by `tla-admin resume` so it can fire again
+    Value: !Ref ModelCallsAlarm

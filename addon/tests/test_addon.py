@@ -36,12 +36,20 @@ def install_like_an_artist():
 install_like_an_artist()
 # Headless Blender starts offline; artists turn this on in Preferences > System.
 bpy.context.preferences.system.use_online_access = True
-tla = importlib.import_module(PKG)
-jobs = importlib.import_module(PKG + ".jobs")
-lightstate = importlib.import_module(PKG + ".lightstate")
-ops = importlib.import_module(PKG + ".ops")
-props = importlib.import_module(PKG + ".props")
-client = importlib.import_module(PKG + ".client")
+
+
+def _load_modules():
+    global tla, jobs, lightstate, ops, props, client, _real_report
+    tla = importlib.import_module(PKG)
+    jobs = importlib.import_module(PKG + ".jobs")
+    lightstate = importlib.import_module(PKG + ".lightstate")
+    ops = importlib.import_module(PKG + ".ops")
+    props = importlib.import_module(PKG + ".props")
+    client = importlib.import_module(PKG + ".client")
+    _real_report = ops._report_outcome
+
+
+_load_modules()
 
 
 def new_scene():
@@ -58,8 +66,6 @@ def new_scene():
     ops.state().clear(keep_note=False)
     return light, ob
 
-
-_real_report = ops._report_outcome
 
 
 class AddonTests(unittest.TestCase):
@@ -230,6 +236,99 @@ class AddonTests(unittest.TestCase):
     def test_non_spot_lights_are_not_offered(self):
         self.light.type = "POINT"
         self.assertFalse(ops.TLA_OT_suggest.poll(bpy.context))
+
+    # ------------------------------------------ regressions from the review
+    def test_stale_result_never_fills_a_new_request(self):
+        """Review #2: a result from an earlier request (e.g. before a file load)
+        used to be shown as the answer to the next one."""
+        st = ops.state()
+        st.status, st.token, st.light_name, st.light_uid = "WAITING", "new-token", self.light.name, self.light.session_uid
+        old = {"request_id": "a" * 24, "in_scope": True, "rationale": "OLD", "confidence": 0.9,
+               "proposal": {"energy": 5.0}, "adjustments": []}
+        ops.on_suggest_result(old, None, "old-token")
+        self.assertEqual(st.status, "WAITING")
+        self.assertEqual(len(st.rows), 0)
+        ops.on_suggest_result(dict(old, rationale="NEW"), None, "new-token")
+        self.assertEqual((st.status, st.rationale), ("READY", "NEW"))
+
+    def test_poll_timer_survives_file_loads(self):
+        jobs.run(lambda: None, lambda r, e: None)
+        self.assertTrue(bpy.app.timers.is_registered(jobs.poll))
+        jobs.wait_all(5)
+
+    def test_cancel_while_waiting_and_late_result_ignored(self):
+        """Review #5: WAITING could only be left by a result that might never come."""
+        st = ops.state()
+        st.status, st.token = "WAITING", "t1"
+        self.assertTrue(ops.TLA_OT_discard.poll(bpy.context))
+        bpy.ops.tla.discard()
+        self.assertEqual(st.status, "IDLE")
+        ops.on_suggest_result({"proposal": {"energy": 5.0}}, None, "t1")
+        self.assertEqual(st.status, "IDLE")
+
+    def test_reenabling_the_addon_clears_a_stuck_wait(self):
+        bpy.context.window_manager.tla.status = "WAITING"
+        bpy.ops.preferences.addon_disable(module=PKG)
+        bpy.ops.preferences.addon_enable(module=PKG)
+        _load_modules()  # re-enabling may re-import the package
+        self.assertEqual(bpy.context.window_manager.tla.status, "IDLE")
+        p = bpy.context.preferences.addons[PKG].preferences
+        p.backend_url, p.api_key = BACKEND or "http://127.0.0.1:1", KEY or "tla_x"
+
+    def test_callback_exception_becomes_an_error_not_a_hang(self):
+        st = ops.state()
+        st.status, st.token = "WAITING", "t2"
+        ops.on_suggest_result({"proposal": "not a dict", "in_scope": True}, None, "t2")
+        self.assertEqual(st.status, "ERROR")
+
+    def test_apply_is_all_or_nothing(self):
+        """Review #3: scalars were written before a preset step that could fail."""
+        orig = lightstate._build_gobo
+        lightstate._build_gobo = lambda *a: (_ for _ in ()).throw(RuntimeError("boom"))
+        try:
+            with self.assertRaises(RuntimeError):
+                lightstate.apply_values(self.light, {"energy": 400.0, "spot_blend": 0.5, "preset": "gobo_slot"})
+        finally:
+            lightstate._build_gobo = orig
+        self.assertEqual(self.light.energy, 1000.0)
+        self.assertAlmostEqual(self.light.spot_blend, 0.15, places=5)
+        self.assertEqual(lightstate.preset_state(self.light), "none")
+        self.assertNotIn(lightstate.PREV_NODES_KEY, self.light)
+
+    def test_apply_operator_failure_leaves_light_unchanged(self):
+        self.light.use_nodes = True
+        nt = self.light.node_tree
+        [nt.nodes.remove(n) for n in list(nt.nodes) if n.bl_idname == "ShaderNodeOutputLight"]
+        nt.nodes.new("ShaderNodeTexNoise")  # tree with no output: not buildable, not ours
+        st = self._ready({"energy": 400.0, "preset": "gobo_slot"})
+        ops._report_outcome = lambda *a, **k: self.fail("no outcome for a failed apply")
+        with self.assertRaises(RuntimeError):
+            bpy.ops.tla.apply()
+        self.assertEqual(self.light.energy, 1000.0)
+
+    def test_emptied_node_tree_gets_default_nodes(self):
+        self.light.use_nodes = True
+        nt = self.light.node_tree
+        for n in list(nt.nodes):
+            nt.nodes.remove(n)
+        self.assertEqual(lightstate.preset_state(self.light), "none")
+        lightstate.apply_values(self.light, {"energy": 400.0, "preset": "gobo_slot"})
+        self.assertEqual(self.light.energy, 400.0)
+        self.assertEqual(lightstate.preset_state(self.light), "gobo_slot")
+
+    def test_url_check_blocks_cleartext_to_remote_hosts(self):
+        """Review #7: prefix matching let the key go over http to other hosts."""
+        for bad in ("http://localhost.evil.com", "http://127.0.0.1.nip.io", "http://127.0.0.1@evil.com",
+                    "http://evil.com", "ftp://x", "https://user:pw@x.com", "", "https://", "http://127.0.0.1:99999"):
+            with self.assertRaises(client.BackendError, msg=bad):
+                client.check_url(bad)
+        for good in ("https://abc.execute-api.us-west-2.amazonaws.com/demo", "http://127.0.0.1:8787", "http://localhost:8787/"):
+            client.check_url(good)
+
+    def test_client_timeout_covers_the_backend(self):
+        """Review #11: a shorter client timeout gave up on calls it was charged for."""
+        p = bpy.context.preferences.addons[PKG].preferences
+        self.assertGreaterEqual(p.bl_rna.properties["timeout"].hard_min, 30)
 
     # ---------------------------------------------------------------- e2e
     @unittest.skipUnless(BACKEND and KEY, "set TLA_BACKEND and TLA_KEY (cmd/local) for the end-to-end test")

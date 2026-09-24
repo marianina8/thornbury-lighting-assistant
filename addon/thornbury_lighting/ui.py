@@ -33,7 +33,9 @@ def draw_assistant(layout, context):
     row.operator("tla.suggest", icon="LIGHT_SPOT" if st.status != "WAITING" else "SORTTIME",
                  text="Asking…" if st.status == "WAITING" else "Suggest")
 
-    if st.status == "ERROR":
+    if st.status == "WAITING":
+        layout.operator("tla.discard", text="Cancel", icon="X")
+    elif st.status == "ERROR":
         box = layout.box()
         _wrapped(box, st.message, icon="ERROR")
         box.operator("tla.discard", text="Dismiss")
@@ -128,7 +130,9 @@ class TLA_Preferences(bpy.types.AddonPreferences):
 
     backend_url: bpy.props.StringProperty(name="Backend URL", description="The URL you were given with your key")
     api_key: bpy.props.StringProperty(name="API key", subtype="PASSWORD", description="Your personal key (tla_…)")
-    timeout: bpy.props.IntProperty(name="Timeout (s)", default=25, min=5, max=60)
+    # At least as long as the backend may take (20 s model call inside a
+    # 30 s gateway limit), so the addon never gives up on a call it's charged for.
+    timeout: bpy.props.IntProperty(name="Timeout (s)", default=35, min=30, max=90)
     connection_status: bpy.props.StringProperty(options={"SKIP_SAVE"})
 
     def draw(self, context):

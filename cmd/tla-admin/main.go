@@ -18,6 +18,8 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/cloudwatch"
+	cwtypes "github.com/aws/aws-sdk-go-v2/service/cloudwatch/types"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/ssm"
 
@@ -96,6 +98,15 @@ func main() {
 		w.Flush()
 	case "pause", "resume":
 		check(killswitch.Set(ctx, sc, outs["KillSwitchParam"], cmd == "resume"))
+		if cmd == "resume" && outs["ModelCallsAlarmName"] != "" {
+			// An alarm only acts when its state changes. If it paused the
+			// assistant and is still in ALARM, reset it so it can fire again.
+			_, err := cloudwatch.NewFromConfig(cfg).SetAlarmState(ctx, &cloudwatch.SetAlarmStateInput{
+				AlarmName: aws.String(outs["ModelCallsAlarmName"]), StateValue: cwtypes.StateValueOk,
+				StateReason: aws.String("reset by tla-admin resume"),
+			})
+			check(err)
+		}
 		fmt.Printf("assistant %sd (takes effect within 30 s)\n", cmd)
 	case "status":
 		out, err := sc.GetParameter(ctx, &ssm.GetParameterInput{Name: aws.String(outs["KillSwitchParam"])})

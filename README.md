@@ -63,7 +63,8 @@ API: `GET /v1/health`, `GET /v1/me` (usage; no model call),
 - **Per-key monthly cap** (default 50), enforced atomically in DynamoDB.
   30 concurrent requests against a limit of 10 reserve exactly 10 (tested on
   DynamoDB emulation).
-- **Global daily cap** (300 calls/day, a template parameter) plus API Gateway
+- **Global daily cap** (300 model-call attempts per day, a template parameter;
+  failed calls count too, and 0 turns the assistant off) plus API Gateway
   throttling (5 req/s, burst 10).
 - **Kill switch:** an SSM parameter created by the template (fails closed and
   is cached 30 s). `tla-admin pause`/`resume` flip it. A CloudWatch alarm on
@@ -73,12 +74,21 @@ API: `GET /v1/health`, `GET /v1/me` (usage; no model call),
   response to 400 tokens, and there's one call per request. That's roughly
   $0.003 per suggestion at Haiku 4.5 prices, so a 50-call tester month costs
   about $0.15.
-- **Failed model calls are refunded** and audited as `model_error`. Invalid
-  requests are rejected before any charge or model call.
+- **Failed model calls:** a failure that can't have been billed (no tokens
+  reported, no timeout) is refunded to the tester's key. Billed failures
+  still count, so a note that reliably breaks the model can't be replayed for
+  free. Either way the call is audited as `model_error`. Invalid requests are
+  rejected before any charge or model call; rejections are logged to
+  CloudWatch.
 - **Audit trail:** note, current values, raw model output, clamped proposal,
   corrections, rationale, confidence, tokens, latency, and the outcome
   (applied / discarded / edited, with the values actually applied). Kept 180
   days.
+- **Addon side:** nothing is written until Apply, and Apply is all or
+  nothing: every check and file load happens before the first write, and a
+  failure rolls every value back. A result that arrives after Cancel, or
+  after a new Suggest or a file load, is ignored. The key is only ever sent
+  over https (or plain http to this machine for local testing).
 
 ## Deploy (run from your own terminal)
 
@@ -138,12 +148,13 @@ server against real Bedrock with your AWS profile. The local audit trail is at
   Set `DYNAMO_TEST_ENDPOINT` (e.g. `moto_server`) to run the store contract
   against DynamoDB semantics as well.
 - `make addon-test`: installs the built zip the way **Install from Disk**
-  does, into a throwaway Blender profile, then runs 16 tests inside real
+  does, into a throwaway Blender profile, then runs 26 tests inside real
   Blender. It covers:
   - reading and writing the data-block, and client-side clamps;
   - temperature capability, gobo and IES wiring, preset switching and removal;
   - custom node trees are never touched, unticked and edited rows, the operator's UNDO flag;
   - the offline refusal;
+  - regression tests for everything the independent review found (stale results, a stuck "Asking…", partial applies, the URL check);
   - an end-to-end Suggest → Apply → outcome-in-audit run against `cmd/local`.
   
   Set up the Blender builds once:

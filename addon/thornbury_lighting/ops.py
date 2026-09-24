@@ -3,6 +3,7 @@
 clicking Apply, whatever the confidence."""
 
 import json
+import uuid
 
 import bpy
 
@@ -80,21 +81,30 @@ class TLA_OT_suggest(bpy.types.Operator):
         payload = {"note": note, "light": current, "capabilities": lightstate.capabilities(light),
                    "blender_version": bpy.app.version_string, "client_version": CLIENT_VERSION}
         st.clear()
-        st.status, st.message = "WAITING", "Asking the assistant…"
+        token = uuid.uuid4().hex
+        st.status, st.message, st.token = "WAITING", "Asking the assistant…", token
         st.light_name, st.light_uid, st.snapshot = light.name, light.session_uid, json.dumps(current)
         url, key, timeout = p.backend_url, p.api_key, p.timeout
-        jobs.run(lambda: client.suggest(url, key, payload, timeout=timeout), on_suggest_result)
+        jobs.run(lambda: client.suggest(url, key, payload, timeout=timeout),
+                 lambda res, err: on_suggest_result(res, err, token))
         return {"FINISHED"}
 
 
-def on_suggest_result(res, err):
+def on_suggest_result(res, err, token):
     st = state()
-    if st.status != "WAITING":
-        return  # the artist moved on
+    if st.status != "WAITING" or st.token != token:
+        return  # cancelled, superseded, or from before a file load: never show it
+    try:
+        _fill_result(st, res, err)
+    except Exception as e:  # never leave the panel stuck on "Asking…"
+        st.status, st.message = "ERROR", "Couldn't read the backend's answer: %s" % e
+    redraw()
+
+
+def _fill_result(st, res, err):
     if err is not None:
         st.status = "ERROR"
         st.message = str(err)
-        redraw()
         return
     st.request_id = res.get("request_id", "")
     st.rationale = res.get("rationale", "")
@@ -113,7 +123,6 @@ def on_suggest_result(res, err):
     else:
         props.fill_rows(st, res["proposal"], light)
         st.status, st.message = "READY", ""
-    redraw()
 
 
 class TLA_OT_apply(bpy.types.Operator):
@@ -134,9 +143,9 @@ class TLA_OT_apply(bpy.types.Operator):
             return {"CANCELLED"}
         edited = any((not r.include) or r.edited() for r in st.rows)
         try:
-            applied = lightstate.apply_values(light, values)
-        except ValueError as e:
-            self.report({"ERROR"}, str(e))
+            applied = lightstate.apply_values(light, values)  # all-or-nothing
+        except Exception as e:
+            self.report({"ERROR"}, "Not applied, the light is unchanged: %s" % e)
             return {"CANCELLED"}
         _report_outcome("edited" if edited else "applied", applied)
         if "preset" in applied and applied["preset"] != "none" and context.scene.render.engine != "CYCLES":
@@ -151,11 +160,11 @@ class TLA_OT_apply(bpy.types.Operator):
 class TLA_OT_discard(bpy.types.Operator):
     bl_idname = "tla.discard"
     bl_label = "Discard"
-    bl_description = "Throw the proposal away; the light is not changed"
+    bl_description = "Throw the proposal away (or stop waiting for one); the light is not changed"
 
     @classmethod
     def poll(cls, context):
-        return state(context).status in {"READY", "NO_CHANGE", "OUT_OF_SCOPE", "ERROR"}
+        return state(context).status in {"WAITING", "READY", "NO_CHANGE", "OUT_OF_SCOPE", "ERROR"}
 
     def execute(self, context):
         st = state(context)

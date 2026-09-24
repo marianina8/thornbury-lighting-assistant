@@ -74,6 +74,7 @@ class TLA_State(bpy.types.PropertyGroup):
     status: EnumProperty(items=[(s, s.title(), "") for s in ("IDLE", "WAITING", "READY", "NO_CHANGE", "OUT_OF_SCOPE", "ERROR")])
     message: StringProperty()
     request_id: StringProperty()
+    token: StringProperty()  # identifies the in-flight Suggest; a result for any other token is ignored
     light_name: StringProperty()
     light_uid: IntProperty()
     snapshot: StringProperty()  # JSON: the light's state when the note was sent
@@ -85,7 +86,7 @@ class TLA_State(bpy.types.PropertyGroup):
 
     def clear(self, keep_note=True):
         note = self.note
-        self.status, self.message, self.request_id = "IDLE", "", ""
+        self.status, self.message, self.request_id, self.token = "IDLE", "", "", ""
         self.light_name, self.light_uid, self.snapshot = "", 0, ""
         self.rationale, self.confidence, self.adjustments = "", 0.0, ""
         self.rows.clear()
@@ -134,6 +135,14 @@ def register():
     for c in classes:
         bpy.utils.register_class(c)
     bpy.types.WindowManager.tla = bpy.props.PointerProperty(type=TLA_State)
+    # Re-enabling the addon mid-request must not leave the panel stuck on
+    # "Asking…" (the old request's result can no longer arrive).
+    try:
+        for wm in bpy.data.window_managers:
+            if wm.tla.status == "WAITING":
+                wm.tla.clear()
+    except AttributeError:
+        pass  # bpy.data is restricted while Blender starts up; nothing is waiting then
 
 
 def unregister():

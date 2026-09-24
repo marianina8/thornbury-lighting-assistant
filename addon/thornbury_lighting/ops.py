@@ -145,7 +145,7 @@ class TLA_OT_apply(bpy.types.Operator):
         try:
             applied = lightstate.apply_values(light, values)  # all-or-nothing
         except Exception as e:
-            self.report({"ERROR"}, "Not applied, the light is unchanged: %s" % e)
+            self.report({"ERROR"}, "Not applied; the light's settings are unchanged: %s" % e)
             return {"CANCELLED"}
         _report_outcome("edited" if edited else "applied", applied)
         if "preset" in applied and applied["preset"] != "none" and context.scene.render.engine != "CYCLES":

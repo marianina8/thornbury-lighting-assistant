@@ -353,7 +353,7 @@ class AddonTests(unittest.TestCase):
         dg.update()
         ev = sn.evaluated_get(dg)
         M = light_obj.matrix_world.inverted() @ ev.matrix_world
-        vs = [M @ v.co for v in sn.data.vertices]
+        vs = [M @ v.co for v in sn.data.vertices if v.co.z <= 1e-6]  # the snoot proper (not the rear collar)
         zmax, zmin = max(v.z for v in vs), min(v.z for v in vs)
         back = max(max(abs(v.x), abs(v.y)) for v in vs if abs(v.z - zmax) < 1e-4)
         front = max(max(abs(v.x), abs(v.y)) for v in vs if abs(v.z - zmin) < 1e-4)
@@ -366,7 +366,12 @@ class AddonTests(unittest.TestCase):
         sn = snoot.find(self.ob)
         self.assertIsNotNone(sn)
         self.assertEqual(sn.parent, self.ob)
-        self.assertEqual(len(sn.data.polygons), 32)  # open round tube
+        self.assertEqual(len(sn.data.polygons), 64)  # open round tube + rear collar over the light's sphere
+        M = self.ob.matrix_world.inverted() @ sn.matrix_world
+        dg = bpy.context.evaluated_depsgraph_get(); dg.update()
+        Me = self.ob.matrix_world.inverted() @ sn.evaluated_get(dg).matrix_world
+        zback = max((Me @ v.co).z for v in sn.data.vertices)
+        self.assertGreaterEqual(zback, self.light.shadow_soft_size)  # the collar covers the whole source sphere
         back, front, length = self._extent(self.ob, sn)
         self.assertAlmostEqual(back, 0.54, places=3)
         self.assertAlmostEqual(front, 0.27, places=3)
@@ -420,7 +425,7 @@ class AddonTests(unittest.TestCase):
         sc = snoot.find(ob).evaluated_get(dg).scale
         self.assertAlmostEqual(sc[0], 1.008, places=3)
         self.assertAlmostEqual(sc[1], 0.252, places=3)
-        self.assertEqual(len(snoot.find(ob).data.polygons), 32)
+        self.assertEqual(len(snoot.find(ob).data.polygons), 32)  # area lights: no collar
         L.shape = "SQUARE"
         self.assertTrue(snoot.needs_refit(ob))
 

@@ -43,6 +43,10 @@ it also follows the light's position, rotation and object scale.
 - **Convert Hand-Built Snoot** measures an existing hand-made snoot and replaces it with a managed one of the same proportions. The original is hidden, not deleted.
 - The assistant can add, tighten (smaller mouth or longer tube) or remove a snoot from a note, but never modifies a hand-built one.
 - `make render-check` renders the demo scene with and without each snoot and checks the spill is cut.
+- Spot snoots have a short collar behind the light's centre. A spot light emits from a sphere, and without the collar light from its back half escaped around the tube (spotted in the showcase render). The visible front shape is unchanged.
+- `demo/thornbury_snoot_showcase.blend` (built by `tools/make_snoot_showcase.py`) shows one of each: a spot with a round snoot, a spot with a long, tight snoot, a square area light with a box snoot, a disk area light with a round snoot, and a strip area light with a slot snoot.
+
+![Snoot showcase](docs/img/snoot-showcase.png)
 
 ## Who it's for
 
@@ -221,6 +225,7 @@ internal/presets            embedded preset library (same file ships in the addo
 infra/                      SAM template, billing alarm
 tools/                      preset generator, zip builder, render checks, demo scene
 demo/thornbury_demo.blend   Marian's scene with hand-built spot and area snoots (saved in 5.2; opens in 4.5+)
+demo/thornbury_snoot_showcase.blend  five vases, five lights, five managed snoots (opens in 4.2+)
 docs/                       API verification, tester guide, images
 ```
 

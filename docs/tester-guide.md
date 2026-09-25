@@ -16,8 +16,9 @@ sent you: a **backend URL** and an **API key** (starts with `tla_`).
 
 ## 2. Try it
 
-1. Open `thornbury_demo.blend` (or any scene with a spot or area light) and
-   select a light (**Spot** or **Area** in the demo).
+1. Open `thornbury_snoot_showcase.blend` (five lights, each with a different
+   snoot) or `thornbury_demo.blend`, or any scene with a spot or area light,
+   and select a light.
 2. Find the panel either in **Properties > Light (green bulb tab) > Lighting
    Note Assistant**, or in the 3D view sidebar (**N**) under the **Thornbury** tab.
 3. Type a note, e.g. *snoot the key down so it stops spilling on the

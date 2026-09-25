@@ -107,23 +107,33 @@ def state(light_obj):
 
 # ----------------------------------------------------------------- geometry
 
-def _build_mesh(me, rnd, length, mouth):
+# A spot light emits from a sphere centred on the light, so light leaving its
+# back half at an angle would escape around a tube that starts at the centre
+# (found in a Cycles render of the showcase scene). A straight collar behind
+# the centre covers the source, like a snoot bolted onto a fixture housing;
+# the visible front shape is unchanged. Area lights emit forward from a flat
+# panel at z=0 and need no collar.
+SPOT_COLLAR = 1.0  # in back half-widths (so it covers the whole sphere)
+
+
+def _build_mesh(me, rnd, length, mouth, collar=0.0):
     """Unit snoot in light-local space: back half-width 1 at z=0, mouth
-    half-width `mouth` at z = -2*length (length is in back widths)."""
+    half-width `mouth` at z = -2*length (length is in back widths), plus an
+    optional straight collar from z=0 back to z=+collar."""
     bm = bmesh.new()
     z1 = -2.0 * length
     if rnd:
         n = ROUND_SEGMENTS
-        back = [bm.verts.new((math.cos(2 * math.pi * i / n), math.sin(2 * math.pi * i / n), 0.0)) for i in range(n)]
-        front = [bm.verts.new((mouth * math.cos(2 * math.pi * i / n), mouth * math.sin(2 * math.pi * i / n), z1)) for i in range(n)]
+        ring = lambda r, z: [bm.verts.new((r * math.cos(2 * math.pi * i / n), r * math.sin(2 * math.pi * i / n), z)) for i in range(n)]
     else:
         corners = [(-1, -1), (1, -1), (1, 1), (-1, 1)]
-        back = [bm.verts.new((x, y, 0.0)) for x, y in corners]
-        front = [bm.verts.new((mouth * x, mouth * y, z1)) for x, y in corners]
-    n = len(back)
-    for i in range(n):
-        j = (i + 1) % n
-        bm.faces.new((back[i], back[j], front[j], front[i]))  # open at both ends, like a real snoot
+        ring = lambda r, z: [bm.verts.new((r * x, r * y, z)) for x, y in corners]
+    rings = ([ring(1.0, collar)] if collar > 0 else []) + [ring(1.0, 0.0), ring(mouth, z1)]
+    for a, b in zip(rings, rings[1:]):
+        n = len(a)
+        for i in range(n):
+            j = (i + 1) % n
+            bm.faces.new((a[i], a[j], b[j], b[i]))  # open at both ends, like a real snoot
     bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
     bm.to_mesh(me)
     bm.free()
@@ -244,7 +254,8 @@ def refit(light_obj):
         for k in ("tla_snoot_length", "tla_snoot_mouth"):
             if k in obj.keys():
                 del obj[k]
-    _build_mesh(obj.data, obj["tla_round"], float(obj.tla_snoot_length), float(obj.tla_snoot_mouth))
+    _build_mesh(obj.data, obj["tla_round"], float(obj.tla_snoot_length), float(obj.tla_snoot_mouth),
+                collar=SPOT_COLLAR if light.type == "SPOT" else 0.0)
     _drive(obj, light)
     return obj
 

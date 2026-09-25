@@ -5,3 +5,7 @@ __pycache__/
 *.pyc
 /bootstrap
 *.blend1
+
+# macOS Finder metadata
+.DS_Store
+**/.DS_Store

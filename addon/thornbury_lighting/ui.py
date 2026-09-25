@@ -27,7 +27,10 @@ def draw_assistant(layout, context):
         gallery.draw(layout, context, ob)
     if not p.backend_url.strip() or not p.api_key.strip():
         box = layout.box()
-        _wrapped(box, "Add the backend URL and your API key in Edit > Preferences > Add-ons > Thornbury Lighting Assistant.", icon="PREFERENCES")
+        box.label(text="Lighting notes (optional)", icon="GREASEPENCIL")
+        _wrapped(box, "Snoots and gobos above work without an account. To describe a change in words instead, "
+                      "add a backend URL and API key in Edit > Preferences > Add-ons > Thornbury Lighting Assistant.",
+                 icon="INFO")
         return
 
     layout.prop(st, "note", text="", icon="GREASEPENCIL", placeholder="e.g. snoot the key so it stops spilling on the wall")

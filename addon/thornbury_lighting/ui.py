@@ -4,7 +4,7 @@ import textwrap
 
 import bpy
 
-from . import lightstate, ops, props, snoot
+from . import gallery, lightstate, ops, props, snoot
 
 
 def _wrapped(layout, text, width=48, icon="NONE"):
@@ -23,6 +23,8 @@ def draw_assistant(layout, context):
         _wrapped(layout, "The assistant works on spot and area lights.", icon="INFO")
         return
     _draw_snoot(layout, context, ob)
+    if ob.data.type == "SPOT":
+        gallery.draw(layout, context, ob)
     if not p.backend_url.strip() or not p.api_key.strip():
         box = layout.box()
         _wrapped(box, "Add the backend URL and your API key in Edit > Preferences > Add-ons > Thornbury Lighting Assistant.", icon="PREFERENCES")

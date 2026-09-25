@@ -5,7 +5,7 @@ sent you: a **backend URL** and an **API key** (starts with `tla_`).
 
 ## 1. Install (about 2 minutes)
 
-1. Download `thornbury_lighting-0.2.0.zip`. Don't unzip it.
+1. Download `thornbury_lighting-0.3.0.zip`. Don't unzip it.
 2. In Blender: **Edit > Preferences > Get Extensions** (or **Add-ons**), open the
    **⌄** menu at the top right, choose **Install from Disk…**, and pick the zip.
 3. Still in Preferences, open **System > Network** and make sure
@@ -37,6 +37,15 @@ a snoot you built by hand (a mesh child named "…Snoot"), **Convert Hand-Built
 Snoot** replaces it with a managed one of the same proportions and hides the
 original. You can also just ask: *snoot the key down*, *tighter snoot*, *lose
 the snoot*.
+
+**Pick a gobo by looking at it.** Select a spot light and open the **Gobo**
+box in the panel. Click the big thumbnail to open a grid of 24 gobos (windows
+and blinds, foliage and breakup, shapes and cuts, graphic patterns). Each
+thumbnail is a real render of that gobo on a wall. Pick one and click **Use
+this gobo**. Then **Rotate**, **Size** and **Offset** reshape it live. **Add your
+own…** turns any image into a gobo (white lets light through, black blocks it,
+colours tint it). The **Beam profile** grid below it works the same way for IES
+profiles. No note and no internet needed; Ctrl+Z undoes each pick.
 
 Good notes to try: "snoot it", "snoot it down more", "feather the edge", "half a stop down", "softer shadows",
 "warm it up", "break it up like light through leaves", "cut it into a slot

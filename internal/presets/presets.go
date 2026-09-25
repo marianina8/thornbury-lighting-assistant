@@ -21,6 +21,7 @@ type Preset struct {
 	Label     string `json:"label"`
 	File      string `json:"file"`
 	Extension string `json:"extension,omitempty"`
+	Family    string `json:"family,omitempty"`
 	UseWhen   string `json:"use_when"`
 }
 

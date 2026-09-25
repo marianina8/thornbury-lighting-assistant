@@ -130,14 +130,38 @@ def main():
     check(n < 0.6 * a0, "narrow IES makes a smaller pool (%.2f vs %.2f)" % (n, a0))
     check(w > n * 1.5, "wide flood is wider than narrow spot (%.2f vs %.2f)" % (w, n))
 
+    # The picker's transform really moves the projected pattern.
+    def transitions(px, axis):
+        line = px[:, W // 2] if axis == "col" else px[H // 2, :]
+        lit = line > 0.3 * CENTRE
+        return int(np.count_nonzero(lit[1:] != lit[:-1]))
+
+    lightstate.set_preset(light, "gobo_blinds_wide")
+    flat = render(sc, "blinds0")
+    xf = light.node_tree.nodes["TLA Gobo Transform"]
+    xf.inputs["Rotation"].default_value = (0, 0, -math.radians(90))
+    turned = render(sc, "blinds90")
+    xf.inputs["Rotation"].default_value = (0, 0, 0)
+    xf.inputs["Scale"].default_value = (0.5, 0.5, 1)  # size 2
+    bigger = render(sc, "blinds_big")
+    lightstate.set_preset(light, "none")
+    check(transitions(flat, "col") >= 6 and transitions(flat, "row") <= 2,
+          "horizontal blinds: stripes run across (%d down, %d across)" % (transitions(flat, "col"), transitions(flat, "row")))
+    check(transitions(turned, "row") >= 6 and transitions(turned, "col") <= 2,
+          "rotate 90° turns them vertical (%d across, %d down)" % (transitions(turned, "row"), transitions(turned, "col")))
+    check(transitions(bigger, "col") < transitions(flat, "col"),
+          "size 2 makes the slats bigger (%d -> %d stripes)" % (transitions(flat, "col"), transitions(bigger, "col")))
+
     # Contact sheet: 3 x 3 grid with labels drawn by PIL if available.
     try:
         from PIL import Image, ImageDraw
         tiles = list(shots.items())
-        sheet = Image.new("RGB", (3 * W, 3 * (H + 22)), (18, 18, 18))
+        cols = 7
+        rows = (len(tiles) + cols - 1) // cols
+        sheet = Image.new("RGB", (cols * W, rows * (H + 22)), (18, 18, 18))
         d = ImageDraw.Draw(sheet)
         for i, (pid, px) in enumerate(tiles):
-            x, y = (i % 3) * W, (i // 3) * (H + 22)
+            x, y = (i % cols) * W, (i // cols) * (H + 22)
             tile = Image.fromarray((np.clip(px / (1.1 * CENTRE), 0, 1) ** (1 / 2.2) * 255).astype(np.uint8))
             sheet.paste(tile.convert("RGB"), (x, y))
             label = "No preset" if pid == "none" else lightstate.LIBRARY[pid]["label"]

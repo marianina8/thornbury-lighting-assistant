@@ -50,6 +50,25 @@ def load_library():
 
 
 LIBRARY = load_library()
+USER_PREFIX = "user:"  # a gobo from the artist's own image: "user:<image name>"
+USER_TAG = "tla_user_gobo"
+
+
+def user_gobo_image(pid):
+    if not pid.startswith(USER_PREFIX):
+        return None
+    img = bpy.data.images.get(pid[len(USER_PREFIX):])
+    return img if img is not None and img.get(USER_TAG) else None
+
+
+def resolve(pid):
+    """The preset dict for a library id or a user gobo, or None."""
+    if pid in LIBRARY:
+        return LIBRARY[pid]
+    img = user_gobo_image(pid)
+    if img is not None:
+        return {"id": pid, "kind": "gobo", "label": img.name, "image": img, "extension": "EXTEND"}
+    return None
 
 
 def has_temperature(light):
@@ -103,7 +122,7 @@ def preset_state(light):
         return "none"
     if _is_our_tree(nt):
         pid = light.get(PRESET_KEY, "")
-        return pid if pid in LIBRARY else "custom"
+        return pid if resolve(pid) is not None else "custom"
     if _is_default_tree(nt) or len(nt.nodes) == 0:
         return "none"
     return "custom"
@@ -181,7 +200,7 @@ def sanitize(values, light):
             out["temperature"] = _clamp(float(values["temperature"]), TEMPERATURE_MIN, TEMPERATURE_MAX)
         if "use_temperature" in values:
             out["use_temperature"] = bool(values["use_temperature"])
-    if spot and "preset" in values and (values["preset"] == "none" or values["preset"] in LIBRARY):
+    if spot and "preset" in values and (values["preset"] == "none" or resolve(values["preset"]) is not None):
         out["preset"] = values["preset"]
     if snoot.supported(light):
         if "snoot" in values:
@@ -222,7 +241,7 @@ def apply_values(light, values, obj=None):
             raise ValueError("This light has a hand-built node tree; the assistant won't rewire it.")
         if new_preset != "none":
             _check_tree_buildable(light)
-            _resource(LIBRARY[new_preset])  # load the file now, so a missing file fails before any write
+            _resource(resolve(new_preset))  # load the file now, so a missing file fails before any write
 
     snapshot = {f: getattr(light, f) for f in SCALARS if hasattr(light, f)}
     snapshot_color = tuple(light.color)
@@ -235,7 +254,7 @@ def apply_values(light, values, obj=None):
             light.color = v["color"]
         if new_preset is not None:
             set_preset(light, new_preset)
-        elif light.type == "SPOT" and preset_state(light) in LIBRARY:
+        elif light.type == "SPOT" and resolve(preset_state(light)) is not None:
             _update_gobo_scale(light)  # keep a gobo filling the (possibly new) cone
         if snoot_change:
             _apply_snoot(obj, v)
@@ -246,7 +265,7 @@ def apply_values(light, values, obj=None):
         if snoot_change:
             _restore_snoot(obj, snoot_before)
         try:
-            set_preset(light, before_preset if before_preset in LIBRARY else "none")
+            set_preset(light, before_preset if resolve(before_preset) is not None else "none")
         except Exception:
             pass
         raise
@@ -334,7 +353,9 @@ def set_preset(light, preset_id):
         if PRESET_KEY in light:
             del light[PRESET_KEY]
         return
-    preset = LIBRARY[preset_id]
+    preset = resolve(preset_id)
+    if preset is None:
+        raise ValueError("Unknown gobo or profile: %s" % preset_id)
     if PREV_NODES_KEY not in light:
         light[PREV_NODES_KEY] = _use_nodes(light)
     _set_use_nodes(light, True)
@@ -373,6 +394,8 @@ def _update_gobo_scale(light):
 
 
 def _image(preset):
+    if "image" in preset:  # the artist's own gobo, already in the file
+        return preset["image"]
     name = NODE_PREFIX + preset["id"]
     img = bpy.data.images.get(name)
     if img is None:
@@ -392,6 +415,11 @@ def _build_gobo(light, em, preset):
     negz.operation = "MULTIPLY"
     negz.inputs[1].default_value = -1.0
     comb = _node(nt, "ShaderNodeCombineXYZ", "Gobo UV", (x - 360, y))
+    xf = _node(nt, "ShaderNodeMapping", "Gobo Transform", (x - 360, y - 220))  # rotate / size / offset
+    xf.vector_type = "POINT"
+    centre = _node(nt, "ShaderNodeVectorMath", "Gobo Center", (x - 200, y - 220))
+    centre.operation = "ADD"
+    centre.inputs[1].default_value = (0.5, 0.5, 0.0)
     tex = _node(nt, "ShaderNodeTexImage", "Gobo Image", (x - 200, y + 40))
     tex.image = _image(preset)
     tex.extension = preset.get("extension", "EXTEND")
@@ -408,11 +436,42 @@ def _build_gobo(light, em, preset):
         mad = _node(nt, "ShaderNodeMath", "Gobo Scale " + axis, (x - 540, y + 120 - 140 * i))
         mad.operation = "MULTIPLY_ADD"
         mad.inputs[1].default_value = k
-        mad.inputs[2].default_value = 0.5
+        mad.inputs[2].default_value = 0.0  # centred; the transform then shifts to image space
         L.new(div.outputs[0], mad.inputs[0])
         L.new(mad.outputs[0], comb.inputs[i])
-    L.new(comb.outputs[0], tex.inputs[0])
+    L.new(comb.outputs[0], xf.inputs["Vector"])
+    L.new(xf.outputs[0], centre.inputs[0])
+    L.new(centre.outputs[0], tex.inputs[0])
     L.new(tex.outputs[0], em.inputs[0])  # Color
+    update_gobo_transform(light)
+
+
+def update_gobo_transform(light):
+    """Apply the light's gobo rotation, size and offset to the Mapping node.
+    Rotation turns the pattern about the beam axis; size 2 makes it twice as
+    big; offset slides it (in pattern widths)."""
+    nt = light.node_tree
+    xf = nt.nodes.get(NODE_PREFIX + "Gobo Transform") if nt is not None else None
+    if xf is None:
+        return False
+    size = max(0.05, float(getattr(light, "tla_gobo_size", 1.0)))
+    off = getattr(light, "tla_gobo_offset", (0.0, 0.0))
+    xf.inputs["Scale"].default_value = (1.0 / size, 1.0 / size, 1.0)
+    xf.inputs["Rotation"].default_value = (0.0, 0.0, -float(getattr(light, "tla_gobo_rotation", 0.0)))
+    xf.inputs["Location"].default_value = (-float(off[0]), -float(off[1]), 0.0)
+    return True
+
+
+def gobo_transform_changed(light):
+    """Property update: files from 0.1/0.2 have no transform node, so rebuild
+    their gobo once (same pattern) to add it."""
+    if light.type != "SPOT":
+        return
+    if not update_gobo_transform(light):
+        pid = preset_state(light)
+        pre = resolve(pid)
+        if pre is not None and pre["kind"] == "gobo":
+            set_preset(light, pid)
 
 
 def _ies_text(preset):

@@ -39,7 +39,7 @@ bpy.context.preferences.system.use_online_access = True
 
 
 def _load_modules():
-    global tla, jobs, lightstate, ops, props, client, snoot, _real_report
+    global tla, jobs, lightstate, ops, props, client, snoot, gallery, _real_report
     tla = importlib.import_module(PKG)
     jobs = importlib.import_module(PKG + ".jobs")
     lightstate = importlib.import_module(PKG + ".lightstate")
@@ -47,6 +47,7 @@ def _load_modules():
     props = importlib.import_module(PKG + ".props")
     client = importlib.import_module(PKG + ".client")
     snoot = importlib.import_module(PKG + ".snoot")
+    gallery = importlib.import_module(PKG + ".gallery")
     _real_report = ops._report_outcome
 
 
@@ -548,6 +549,80 @@ class AddonTests(unittest.TestCase):
         self.assertAlmostEqual(L.spread, math.radians(1.0), places=5)
         self.assertNotIn("spot_size", v)  # spot-only fields never touch an area light
         self.assertNotIn("preset", v)
+
+    # -------------------------------------------------------------- gallery
+    def test_every_preset_has_a_rendered_thumbnail(self):
+        for pid in ["none"] + list(lightstate.LIBRARY):
+            self.assertTrue(os.path.exists(os.path.join(gallery.THUMB_DIR, pid + ".png")), pid)
+        gobos = gallery.gobo_items(None, bpy.context)
+        self.assertEqual(len(gobos), 1 + sum(1 for p in lightstate.LIBRARY.values() if p["kind"] == "gobo"))
+        self.assertGreaterEqual(len(gobos), 25)
+        self.assertEqual(len(gallery.ies_items(None, bpy.context)), 4)
+        self.assertEqual(len({i[4] for i in gobos}), len(gobos))  # unique enum numbers
+
+    def test_pick_and_use_a_gobo_then_a_profile(self):
+        self.assertIn("UNDO", gallery.TLA_OT_gobo_use.bl_options)
+        wm = bpy.context.window_manager
+        wm.tla_pick_gobo = "gobo_window_arched"
+        self.assertEqual(bpy.ops.tla.gobo_use(kind="gobo"), {"FINISHED"})
+        self.assertEqual(lightstate.preset_state(self.light), "gobo_window_arched")
+        wm.tla_pick_ies = "ies_narrow_spot"
+        bpy.ops.tla.gobo_use(kind="ies")
+        self.assertEqual(lightstate.preset_state(self.light), "ies_narrow_spot")  # one pattern at a time
+        wm.tla_pick_gobo = "none"
+        bpy.ops.tla.gobo_use(kind="gobo")
+        self.assertEqual(lightstate.preset_state(self.light), "none")
+
+    def test_picker_refuses_custom_node_trees_and_area_lights(self):
+        self.light.use_nodes = True
+        self.light.node_tree.nodes.new("ShaderNodeTexNoise")
+        self.assertFalse(gallery.TLA_OT_gobo_use.poll(bpy.context))
+        L, ob = self._area()
+        bpy.context.view_layer.objects.active = ob
+        self.assertFalse(gallery.TLA_OT_gobo_use.poll(bpy.context))
+
+    def test_rotate_size_offset_drive_the_mapping_node(self):
+        lightstate.apply_values(self.light, {"preset": "gobo_blinds_wide"}, self.ob)
+        xf = self.light.node_tree.nodes["TLA Gobo Transform"]
+        self.light.tla_gobo_rotation = math.radians(90)
+        self.light.tla_gobo_size = 2.0
+        self.light.tla_gobo_offset = (0.1, -0.2)
+        self.assertAlmostEqual(xf.inputs["Rotation"].default_value[2], -math.radians(90), places=5)
+        self.assertAlmostEqual(xf.inputs["Scale"].default_value[0], 0.5, places=5)
+        self.assertAlmostEqual(xf.inputs["Location"].default_value[1], 0.2, places=5)
+        # Switching gobo keeps the artist's transform.
+        lightstate.apply_values(self.light, {"preset": "gobo_bars"}, self.ob)
+        xf = self.light.node_tree.nodes["TLA Gobo Transform"]
+        self.assertAlmostEqual(xf.inputs["Scale"].default_value[0], 0.5, places=5)
+
+    def test_gobos_from_older_versions_gain_the_transform(self):
+        lightstate.apply_values(self.light, {"preset": "gobo_slot"}, self.ob)
+        nt = self.light.node_tree
+        for n in ("TLA Gobo Transform", "TLA Gobo Center"):  # what a 0.2 file looks like
+            nt.nodes.remove(nt.nodes[n])
+        nt.links.new(nt.nodes["TLA Gobo UV"].outputs[0], nt.nodes["TLA Gobo Image"].inputs[0])
+        self.assertEqual(lightstate.preset_state(self.light), "gobo_slot")
+        self.light.tla_gobo_rotation = 0.5
+        self.assertIn("TLA Gobo Transform", nt.nodes)
+        self.assertEqual(lightstate.preset_state(self.light), "gobo_slot")
+
+    def test_add_your_own_gobo_image(self):
+        import tempfile
+        img = bpy.data.images.new("my_cookie", 32, 32)
+        path = os.path.join(tempfile.mkdtemp(), "my_cookie.png")
+        img.filepath_raw, img.file_format = path, "PNG"
+        img.save()
+        bpy.data.images.remove(img)
+        self.assertEqual(bpy.ops.tla.gobo_add_image(filepath=path), {"FINISHED"})
+        state = lightstate.read_state(self.light, self.ob)
+        self.assertTrue(state["preset"].startswith("user:"))
+        user = bpy.data.images[state["preset"][5:]]
+        self.assertIsNotNone(user.packed_file)
+        self.assertIn(state["preset"], [i[0] for i in gallery.gobo_items(None, bpy.context)])
+        self.assertEqual(self.light.node_tree.nodes["TLA Gobo Image"].image, user)
+        # The assistant can still swap it for a library preset.
+        lightstate.apply_values(self.light, {"preset": "gobo_stars"}, self.ob)
+        self.assertEqual(lightstate.preset_state(self.light), "gobo_stars")
 
     # ---------------------------------------------------------------- e2e
     @unittest.skipUnless(BACKEND and KEY, "set TLA_BACKEND and TLA_KEY (cmd/local) for the end-to-end test")

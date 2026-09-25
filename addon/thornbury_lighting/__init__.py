@@ -5,9 +5,9 @@ proposed set of spot or area light settings (including a physical snoot) that th
 The model only proposes numbers; this addon shows them as a diff and writes
 nothing until the artist clicks Apply (one undo step)."""
 
-from . import jobs, ops, props, ui
+from . import gallery, jobs, ops, props, ui
 
-_modules = (props, ops, ui)
+_modules = (props, gallery, ops, ui)
 
 
 def register():

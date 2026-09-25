@@ -17,7 +17,7 @@ Not everyone can describe the look they want, so the panel also has a
 - **Thumbnails are real Cycles renders** of each gobo projected onto a wall through the addon's own node wiring (`tools/render_thumbs.py`). The picker shows what the light will look like, not the raw black-and-white image.
 - **Rotate, Size and Offset** sliders reshape the gobo live. A Mapping node in the gobo chain carries these, and gobos from older versions gain the transform the first time a slider moves.
 - **Add your own…** turns any image into a gobo, packed into the .blend. The assistant can still swap it for a library gobo.
-- Each pick is one undo step and works offline. The notes assistant knows the library too, but it needs `make sam-deploy` to learn about the new gobos.
+- Each pick is one undo step and works offline. The notes assistant knows the library too, but only if its backend is deployed from this version.
 
 ![Gobo library, rendered](docs/img/gobo-library.png)
 
@@ -130,40 +130,41 @@ API: `GET /v1/health`, `GET /v1/me` (usage; no model call),
   after a new Suggest or a file load, is ignored. The key is only ever sent
   over https (or plain http to this machine for local testing).
 
-## Deploy (run from your own terminal)
+## Install the plugin
 
-This build session can't reach AWS, so these steps are for Marian. Tools:
-Go 1.24+, AWS SAM CLI, AWS CLI, profile `demos-admin`.
+Download or build the zip (`make addon-zip` → `dist/thornbury_lighting-0.3.1.zip`),
+then in Blender 4.2+: **Edit > Preferences > Add-ons > ⌄ > Install from Disk…**.
+Snoots, gobos and beam profiles work straight away. No account, key or internet
+is needed.
 
-```bash
-cd ~/Code/github.com/marianina8/thornbury-lighting-assistant
-go mod tidy && make test                       # fills go.sum test-only entries, runs tests
+## Host your own backend (optional, for the notes assistant)
 
-# One-time: Bedrock model access for Anthropic Claude Haiku 4.5 in us-west-2
-# (Bedrock console > Model access). Fenwick already uses the same profile.
-
-make sam-deploy                                # stack thornbury-lighting-assistant, us-west-2
-make issue-key LABEL=boyfriend-tester LIMIT=50 # prints the backend URL + key ONCE
-make addon-zip                                 # dist/thornbury_lighting-0.3.0.zip
-
-# Optional
-make billing-alarm EMAIL=you@example.com       # us-east-1; enable "Receive CloudWatch billing alerts" first
-aws sns subscribe --topic-arn <UsageAlarmTopic output> --protocol email \
-  --notification-endpoint you@example.com --profile demos-admin --region us-west-2
-```
-
-Send the tester the zip, `docs/tester-guide.md`, `demo/thornbury_demo.blend`,
-and the two lines `issue-key` printed.
-
-Day to day:
+The Lighting Note Assistant needs a small backend in your own AWS account.
+One command deploys it and prints the Backend URL and API key for the
+plugin's preferences:
 
 ```bash
-go run ./cmd/tla-admin keys                    # usage per key
-go run ./cmd/tla-admin audit --n 20            # recent notes, proposals, outcomes
-go run ./cmd/tla-admin pause | resume | status
-go run ./cmd/tla-admin revoke --id <key id>
-go run ./cmd/tla-admin set-limit --id <key id> --limit 100
+make self-host                                   # or: make self-host PROFILE=my-profile REGION=eu-west-1
 ```
+
+See **[docs/self-host.md](docs/self-host.md)** for what you need, what it
+costs, the built-in limits, and how to remove it (`make self-host-delete`).
+
+## Maintainer notes (the Thornbury demo deployment)
+
+Marian's own stack uses the AWS profile `demos-admin` in us-west-2. Put
+`PROFILE = demos-admin` in `local.mk`, or `export AWS_PROFILE=demos-admin`.
+
+```bash
+make test && make sam-deploy
+make issue-key LABEL=boyfriend-tester LIMIT=50   # prints the backend URL + key ONCE
+make addon-zip
+make billing-alarm EMAIL=you@example.com         # optional; us-east-1
+```
+
+Send a tester the zip, `docs/tester-guide.md`, `demo/thornbury_snoot_showcase.blend`,
+and the two lines `issue-key` printed. Day to day, `go run ./cmd/tla-admin keys | audit --n 20 |
+pause | resume | status | revoke --id <id> | set-limit --id <id> --limit <n>`.
 
 ## Try it locally first (no AWS)
 

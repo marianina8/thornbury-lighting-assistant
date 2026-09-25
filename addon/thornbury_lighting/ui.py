@@ -155,10 +155,13 @@ class TLA_PT_sidebar(bpy.types.Panel):
         draw_assistant(self.layout, context)
 
 
+SELF_HOST_URL = "https://github.com/marianina8/thornbury-lighting-assistant/blob/main/docs/self-host.md"
+
+
 class TLA_Preferences(bpy.types.AddonPreferences):
     bl_idname = __package__
 
-    backend_url: bpy.props.StringProperty(name="Backend URL", description="The URL you were given with your key")
+    backend_url: bpy.props.StringProperty(name="Backend URL", description="Your backend's URL (from whoever gave you a key, or from `make self-host`)")
     api_key: bpy.props.StringProperty(name="API key", subtype="PASSWORD", description="Your personal key (tla_…)")
     # At least as long as the backend may take (20 s model call inside a
     # 30 s gateway limit), so the addon never gives up on a call it's charged for.
@@ -167,6 +170,13 @@ class TLA_Preferences(bpy.types.AddonPreferences):
 
     def draw(self, context):
         layout = self.layout
+        _wrapped(layout, "Snoots, gobos and beam profiles work without any of this. The backend URL and key are only "
+                         "for the optional Lighting Note Assistant (plain-English notes to light settings).",
+                 width=90, icon="LIGHT")
+        row = layout.row()
+        row.label(text="No URL or key? You can run your own backend in your AWS account.")
+        row.operator("wm.url_open", text="How to host your own", icon="URL").url = SELF_HOST_URL
+        layout.separator()
         layout.prop(self, "backend_url")
         layout.prop(self, "api_key")
         layout.prop(self, "timeout")

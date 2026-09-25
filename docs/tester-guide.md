@@ -1,11 +1,14 @@
 # Trying the Thornbury Lighting Assistant (tester guide)
 
-You need **Blender 4.2 or newer** (the demo scene needs 4.5 or newer) (free, blender.org) and the two things Marian
-sent you: a **backend URL** and an **API key** (starts with `tla_`).
+You need **Blender 4.2 or newer** (free, blender.org). `thornbury_demo.blend`
+needs 4.5 or newer; the snoot showcase opens in 4.2. Snoots and gobos need
+nothing else. For the notes assistant you also need the two things Marian sent
+you: a **backend URL** and an **API key** (starts with `tla_`). Or host your own
+backend with [docs/self-host.md](self-host.md).
 
 ## 1. Install (about 2 minutes)
 
-1. Download `thornbury_lighting-0.3.0.zip`. Don't unzip it.
+1. Download `thornbury_lighting-0.3.1.zip`. Don't unzip it.
 2. In Blender: **Edit > Preferences > Get Extensions** (or **Add-ons**), open the
    **⌄** menu at the top right, choose **Install from Disk…**, and pick the zip.
 3. Still in Preferences, open **System > Network** and make sure

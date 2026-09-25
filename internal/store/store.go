@@ -44,7 +44,7 @@ type Audit struct {
 	Note           string  `dynamodbav:"note" json:"note"`
 	BlenderVersion string  `dynamodbav:"blender_version,omitempty" json:"blender_version,omitempty"`
 	ClientVersion  string  `dynamodbav:"client_version,omitempty" json:"client_version,omitempty"`
-	Current        string  `dynamodbav:"current" json:"current"`                 // JSON
+	Current        string  `dynamodbav:"current" json:"current"` // JSON
 	ModelID        string  `dynamodbav:"model_id" json:"model_id"`
 	ModelOutput    string  `dynamodbav:"model_output,omitempty" json:"model_output,omitempty"` // raw JSON from the model
 	Proposal       string  `dynamodbav:"proposal,omitempty" json:"proposal,omitempty"`         // JSON after clamping

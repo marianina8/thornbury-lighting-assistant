@@ -18,13 +18,13 @@ import (
 // float64 values below sit inside the float32 limits so Blender never clamps
 // a value we have already clamped.
 const (
-	SpotSizeMin = math.Pi / 180 // 1 degree; RNA hard_min 0.0174532924 (float32)
-	SpotSizeMax = math.Pi       // 180 degrees; RNA hard_max 3.14159274 (float32)
-	SpotBlendMin = 0.0
-	SpotBlendMax = 1.0
-	TemperatureMin = 800.0   // Kelvin, RNA hard range (Blender 4.5+)
-	TemperatureMax = 20000.0 // Kelvin
-	ShadowSoftSizeMin = 0.0  // metres, RNA hard_min
+	SpotSizeMin       = math.Pi / 180 // 1 degree; RNA hard_min 0.0174532924 (float32)
+	SpotSizeMax       = math.Pi       // 180 degrees; RNA hard_max 3.14159274 (float32)
+	SpotBlendMin      = 0.0
+	SpotBlendMax      = 1.0
+	TemperatureMin    = 800.0   // Kelvin, RNA hard range (Blender 4.5+)
+	TemperatureMax    = 20000.0 // Kelvin
+	ShadowSoftSizeMin = 0.0     // metres, RNA hard_min
 )
 
 // Policy limits: tighter than Blender's own, chosen by us, and documented.
@@ -38,10 +38,10 @@ const (
 	EnergyMaxStepRatio = 4.0
 	// A light that is currently off (0 W or negative) has no reference for
 	// the step rule; a suggestion may turn it on to at most this.
-	EnergyFromOffMax = 1000.0
-	ColorChannelMin    = 0.0 // RNA hard_min
-	ColorChannelMax    = 1.0 // RNA soft_max; values above 1 are legal in Blender but never proposed.
-	ShadowSoftSizeMax  = 100.0 // RNA soft_max (metres)
+	EnergyFromOffMax  = 1000.0
+	ColorChannelMin   = 0.0   // RNA hard_min
+	ColorChannelMax   = 1.0   // RNA soft_max; values above 1 are legal in Blender but never proposed.
+	ShadowSoftSizeMax = 100.0 // RNA soft_max (metres)
 
 	// Area lights: RNA size/size_y are 0 – FLT_MAX (soft 100); spread 0 – 180°.
 	AreaSizeMin = 0.01 // a 0 m area light is degenerate

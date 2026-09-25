@@ -5,46 +5,223 @@
       "id": "gobo_window_blinds",
       "kind": "gobo",
       "label": "Window blinds",
+      "family": "Windows and blinds",
       "file": "gobo_window_blinds.png",
       "extension": "REPEAT",
       "use_when": "breaks the beam into horizontal slat shadows, like light through venetian blinds"
     },
     {
+      "id": "gobo_blinds_wide",
+      "kind": "gobo",
+      "label": "Wide blinds",
+      "family": "Windows and blinds",
+      "file": "gobo_blinds_wide.png",
+      "extension": "REPEAT",
+      "use_when": "a few thick horizontal slats; bold, graphic blind shadows"
+    },
+    {
+      "id": "gobo_blinds_angled",
+      "kind": "gobo",
+      "label": "Angled blinds",
+      "family": "Windows and blinds",
+      "file": "gobo_blinds_angled.png",
+      "extension": "REPEAT",
+      "use_when": "diagonal slat shadows, like late sun raking through blinds"
+    },
+    {
+      "id": "gobo_blinds_vertical",
+      "kind": "gobo",
+      "label": "Vertical blinds",
+      "family": "Windows and blinds",
+      "file": "gobo_blinds_vertical.png",
+      "extension": "REPEAT",
+      "use_when": "vertical slat shadows, like vertical blinds or louvres"
+    },
+    {
       "id": "gobo_window_panes",
       "kind": "gobo",
       "label": "Window panes",
+      "family": "Windows and blinds",
       "file": "gobo_window_panes.png",
       "extension": "EXTEND",
       "use_when": "projects a four-pane window frame, like sunlight through a window"
     },
     {
+      "id": "gobo_window_grid",
+      "kind": "gobo",
+      "label": "Window grid",
+      "family": "Windows and blinds",
+      "file": "gobo_window_grid.png",
+      "extension": "EXTEND",
+      "use_when": "a nine-pane window (3 by 3 mullions)"
+    },
+    {
+      "id": "gobo_window_arched",
+      "kind": "gobo",
+      "label": "Arched window",
+      "family": "Windows and blinds",
+      "file": "gobo_window_arched.png",
+      "extension": "EXTEND",
+      "use_when": "a tall arched window with mullions; churches, old houses"
+    },
+    {
+      "id": "gobo_window_diamond",
+      "kind": "gobo",
+      "label": "Leaded diamonds",
+      "family": "Windows and blinds",
+      "file": "gobo_window_diamond.png",
+      "extension": "EXTEND",
+      "use_when": "a leaded diamond-lattice window; period or storybook interiors"
+    },
+    {
       "id": "gobo_leaf_breakup",
       "kind": "gobo",
       "label": "Leaf breakup",
+      "family": "Foliage and breakup",
       "file": "gobo_leaf_breakup.png",
       "extension": "REPEAT",
       "use_when": "dappled, broken-up light, like light through foliage; breaks up a flat wash"
     },
     {
+      "id": "gobo_leaf_dense",
+      "kind": "gobo",
+      "label": "Dense canopy",
+      "family": "Foliage and breakup",
+      "file": "gobo_leaf_dense.png",
+      "extension": "REPEAT",
+      "use_when": "mostly shadow with small bright dapples, like a thick tree canopy"
+    },
+    {
+      "id": "gobo_leaf_sparse",
+      "kind": "gobo",
+      "label": "Sparse leaves",
+      "family": "Foliage and breakup",
+      "file": "gobo_leaf_sparse.png",
+      "extension": "REPEAT",
+      "use_when": "mostly light with a few leaf shadows; gentle outdoor breakup"
+    },
+    {
+      "id": "gobo_branches",
+      "kind": "gobo",
+      "label": "Bare branches",
+      "family": "Foliage and breakup",
+      "file": "gobo_branches.png",
+      "extension": "EXTEND",
+      "use_when": "thin branch and twig shadows, like winter trees"
+    },
+    {
+      "id": "gobo_breakup_soft",
+      "kind": "gobo",
+      "label": "Soft breakup",
+      "family": "Foliage and breakup",
+      "file": "gobo_breakup_soft.png",
+      "extension": "REPEAT",
+      "use_when": "low-contrast cloudy breakup that just takes the flatness off a wash"
+    },
+    {
+      "id": "gobo_water_caustic",
+      "kind": "gobo",
+      "label": "Water caustics",
+      "family": "Foliage and breakup",
+      "file": "gobo_water_caustic.png",
+      "extension": "REPEAT",
+      "use_when": "a bright web of caustic lines, like light reflected off a pool"
+    },
+    {
       "id": "gobo_soft_iris",
       "kind": "gobo",
       "label": "Soft iris",
+      "family": "Shapes and cuts",
       "file": "gobo_soft_iris.png",
       "extension": "EXTEND",
       "use_when": "a soft round pool tighter than the cone; a snoot-like cut with a feathered edge"
     },
     {
+      "id": "gobo_hard_iris",
+      "kind": "gobo",
+      "label": "Hard iris",
+      "family": "Shapes and cuts",
+      "file": "gobo_hard_iris.png",
+      "extension": "EXTEND",
+      "use_when": "a small, hard-edged round pool; a pin spot"
+    },
+    {
+      "id": "gobo_ring",
+      "kind": "gobo",
+      "label": "Ring",
+      "family": "Shapes and cuts",
+      "file": "gobo_ring.png",
+      "extension": "EXTEND",
+      "use_when": "a ring of light with a dark centre; a halo"
+    },
+    {
       "id": "gobo_slot",
       "kind": "gobo",
       "label": "Slot (barn doors)",
+      "family": "Shapes and cuts",
       "file": "gobo_slot.png",
       "extension": "EXTEND",
       "use_when": "cuts the beam top and bottom into a horizontal band, like closing barn doors"
     },
     {
+      "id": "gobo_slot_vertical",
+      "kind": "gobo",
+      "label": "Door slit",
+      "family": "Shapes and cuts",
+      "file": "gobo_slot_vertical.png",
+      "extension": "EXTEND",
+      "use_when": "a narrow vertical band, like light through a door left ajar"
+    },
+    {
+      "id": "gobo_barn_doors_corner",
+      "kind": "gobo",
+      "label": "Corner cut",
+      "family": "Shapes and cuts",
+      "file": "gobo_barn_doors_corner.png",
+      "extension": "EXTEND",
+      "use_when": "cuts the beam off two sides and a corner, like angled barn doors"
+    },
+    {
+      "id": "gobo_dots",
+      "kind": "gobo",
+      "label": "Dot grid",
+      "family": "Graphic",
+      "file": "gobo_dots.png",
+      "extension": "REPEAT",
+      "use_when": "a regular grid of dots; graphic, stagey"
+    },
+    {
+      "id": "gobo_stars",
+      "kind": "gobo",
+      "label": "Stars",
+      "family": "Graphic",
+      "file": "gobo_stars.png",
+      "extension": "EXTEND",
+      "use_when": "scattered pinpoints of light, like a star cloth"
+    },
+    {
+      "id": "gobo_bars",
+      "kind": "gobo",
+      "label": "Bars",
+      "family": "Graphic",
+      "file": "gobo_bars.png",
+      "extension": "REPEAT",
+      "use_when": "thin vertical bars, like a cell or railings"
+    },
+    {
+      "id": "gobo_fence",
+      "kind": "gobo",
+      "label": "Chain-link fence",
+      "family": "Graphic",
+      "file": "gobo_fence.png",
+      "extension": "REPEAT",
+      "use_when": "a diamond chain-link fence shadow"
+    },
+    {
       "id": "ies_narrow_spot",
       "kind": "ies",
       "label": "Narrow spot profile",
+      "family": "Beam profiles",
       "file": "ies_narrow_spot.ies",
       "use_when": "a hot centre with fast falloff inside the cone (about 20 degree beam)"
     },
@@ -52,6 +229,7 @@
       "id": "ies_medium_soft",
       "kind": "ies",
       "label": "Medium soft profile",
+      "family": "Beam profiles",
       "file": "ies_medium_soft.ies",
       "use_when": "an even beam with a gentle shoulder (about 45 degrees)"
     },
@@ -59,6 +237,7 @@
       "id": "ies_wide_flood",
       "kind": "ies",
       "label": "Wide flood profile",
+      "family": "Beam profiles",
       "file": "ies_wide_flood.ies",
       "use_when": "broad flood whose brightness rolls off gently toward the edge of a wide cone (about 90 degree field)"
     }

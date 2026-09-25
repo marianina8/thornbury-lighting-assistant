@@ -8,8 +8,8 @@ import (
 )
 
 func TestLibraryLoads(t *testing.T) {
-	if len(All()) != 8 {
-		t.Fatalf("want 8 presets, got %d", len(All()))
+	if len(All()) != 27 {
+		t.Fatalf("want 27 presets (24 gobos + 3 IES), got %d", len(All()))
 	}
 	if !Valid("gobo_soft_iris") || Valid("none") || Valid("") {
 		t.Fatal("Valid is wrong")
@@ -30,6 +30,9 @@ func TestAddonCopyMatchesAndFilesExist(t *testing.T) {
 	for _, p := range All() {
 		if _, err := os.Stat(filepath.Join(dir, p.File)); err != nil {
 			t.Fatalf("%s: %v", p.ID, err)
+		}
+		if _, err := os.Stat(filepath.Join(dir, "thumbs", p.ID+".png")); err != nil {
+			t.Fatalf("%s has no picker thumbnail (run tools/render_thumbs.py): %v", p.ID, err)
 		}
 		if p.Kind != "gobo" && p.Kind != "ies" {
 			t.Fatalf("%s: bad kind %q", p.ID, p.Kind)

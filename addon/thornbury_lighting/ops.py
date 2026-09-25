@@ -278,8 +278,26 @@ class TLA_OT_snoot_convert(bpy.types.Operator):
         return {"FINISHED"}
 
 
+class TLA_OT_snoot_restore(bpy.types.Operator):
+    bl_idname = "tla.snoot_restore"
+    bl_label = "Restore Hand-Built Snoot"
+    bl_description = "Bring back the hand-built snoot that Convert hid (removes the managed one)"
+    bl_options = {"REGISTER", "UNDO"}
+
+    @classmethod
+    def poll(cls, context):
+        ob = _light_obj(context)
+        return ob is not None and snoot.replaced_original(ob) is not None
+
+    def execute(self, context):
+        src = snoot.restore_original(context.object)
+        self.report({"INFO"}, "Restored %s." % src.name)
+        return {"FINISHED"}
+
+
 classes = (TLA_OT_suggest, TLA_OT_apply, TLA_OT_discard, TLA_OT_test_connection,
-           TLA_OT_snoot_add, TLA_OT_snoot_remove, TLA_OT_snoot_refit, TLA_OT_snoot_convert)
+           TLA_OT_snoot_add, TLA_OT_snoot_remove, TLA_OT_snoot_refit, TLA_OT_snoot_convert,
+           TLA_OT_snoot_restore)
 
 
 def register():

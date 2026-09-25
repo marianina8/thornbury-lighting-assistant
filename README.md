@@ -207,7 +207,7 @@ internal/api                handlers + API Gateway adapter
 internal/presets            embedded preset library (same file ships in the addon)
 infra/                      SAM template, billing alarm
 tools/                      preset generator, zip builder, render checks, demo scene
-demo/thornbury_demo.blend   a key spot spilling onto a back wall (opens in 4.2+)
+demo/thornbury_demo.blend   Marian's scene with hand-built spot and area snoots (saved in 5.2; opens in 4.5+)
 docs/                       API verification, tester guide, images
 ```
 

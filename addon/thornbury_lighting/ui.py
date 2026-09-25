@@ -112,12 +112,16 @@ def _draw_snoot(layout, context, ob):
         col.prop(managed, "tla_snoot_mouth", slider=True)
         if snoot.needs_refit(ob):
             box.operator("tla.snoot_refit", icon="FILE_REFRESH", text="Refit to the new light shape")
+        if len(snoot.handmade_candidates(ob)) > 0:
+            _wrapped(box, "A hand-built snoot is also on this light: %s" % snoot.handmade_candidates(ob)[0].name, icon="INFO")
         box.label(text="Scales with the light's %s." % ("radius" if ob.data.type == "SPOT" else "size"), icon="DRIVER")
     elif handmade is not None:
         _wrapped(box, "Hand-built snoot found (%s). Convert it so it scales with the light and the assistant can adjust it." % handmade.name, icon="INFO")
         box.operator("tla.snoot_convert", icon="MODIFIER")
     else:
         box.operator("tla.snoot_add", icon="ADD")
+    if snoot.replaced_original(ob) is not None:
+        box.operator("tla.snoot_restore", icon="LOOP_BACK")
 
 
 class TLA_PT_light_properties(bpy.types.Panel):

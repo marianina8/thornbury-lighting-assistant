@@ -394,12 +394,79 @@ class AddonTests(unittest.TestCase):
         back, _, _ = self._extent(ob, sn)
         self.assertAlmostEqual(back, 0.252, places=3)
         L.shape, L.size_y = "RECTANGLE", 1.0  # y follows size_y for rectangles
+        self.assertTrue(snoot.needs_refit(ob))
+        bpy.ops.tla.snoot_refit()
         dg = bpy.context.evaluated_depsgraph_get(); dg.update()
-        self.assertAlmostEqual(sn.evaluated_get(dg).scale[1], 0.504, places=3)
+        self.assertAlmostEqual(snoot.find(ob).evaluated_get(dg).scale[1], 0.504, places=3)
         L.shape = "DISK"
         self.assertTrue(snoot.needs_refit(ob))
         bpy.ops.tla.snoot_refit()
         self.assertEqual(len(snoot.find(ob).data.polygons), 32)
+
+    def test_ellipse_snoot_follows_both_axes(self):
+        """Review: AreaLight.shape is SQUARE=0, RECTANGLE=1, DISK=4, ELLIPSE=5."""
+        L, ob = self._area()
+        L.shape, L.size, L.size_y = "ELLIPSE", 2.0, 0.5
+        bpy.context.view_layer.objects.active = ob
+        bpy.ops.tla.snoot_add()
+        dg = bpy.context.evaluated_depsgraph_get(); dg.update()
+        sc = snoot.find(ob).evaluated_get(dg).scale
+        self.assertAlmostEqual(sc[0], 1.008, places=3)
+        self.assertAlmostEqual(sc[1], 0.252, places=3)
+        self.assertEqual(len(snoot.find(ob).data.polygons), 32)
+        L.shape = "SQUARE"
+        self.assertTrue(snoot.needs_refit(ob))
+
+    def _child_mesh(self, name, back=0.6, front=0.3, depth=1.5, n=16):
+        import bmesh as _bm
+        me = bpy.data.meshes.new(name)
+        bm = _bm.new()
+        a = [bm.verts.new((back * math.cos(2 * math.pi * i / n), back * math.sin(2 * math.pi * i / n), 0)) for i in range(n)]
+        b = [bm.verts.new((front * math.cos(2 * math.pi * i / n), front * math.sin(2 * math.pi * i / n), -depth)) for i in range(n)]
+        for i in range(n):
+            bm.faces.new((a[i], a[(i + 1) % n], b[(i + 1) % n], b[i]))
+        bm.to_mesh(me); bm.free()
+        o = bpy.data.objects.new(name, me)
+        bpy.context.scene.collection.objects.link(o)
+        o.parent = self.ob
+        return o
+
+    def test_unrelated_children_are_not_mistaken_for_snoots(self):
+        """Review: 'Snoot bracket' used to be hidden by Convert and block the feature."""
+        bracket = self._child_mesh("Snoot bracket")
+        clamp = self._child_mesh("SnootClamp_bracket")
+        self.assertIsNone(snoot.find_handmade(self.ob))
+        self.assertTrue(ops.TLA_OT_snoot_add.poll(bpy.context))
+        self.assertFalse(lightstate.read_state(self.light, self.ob).get("snoot_custom", False))
+        bpy.ops.tla.snoot_add()
+        self.assertFalse(bracket.hide_render or clamp.hide_render)
+
+    def test_convert_refuses_ambiguity_and_touches_nothing(self):
+        a = self._child_mesh("Spot.Snoot")
+        b = self._child_mesh("Spot.Snoot.001")
+        with self.assertRaises(ValueError):
+            snoot.convert_handmade(self.ob)
+        self.assertEqual((a.name, b.name, a.hide_render, b.hide_render), ("Spot.Snoot", "Spot.Snoot.001", False, False))
+        self.assertIsNone(snoot.find(self.ob))
+
+    def test_convert_then_restore_brings_the_original_back(self):
+        hand = self._child_mesh("Key Snoot")
+        bpy.ops.tla.snoot_convert()
+        self.assertTrue(hand.hide_render)
+        self.assertEqual(lightstate.read_state(self.light, self.ob)["snoot"], True)
+        lightstate.apply_values(self.light, {"snoot": False}, self.ob)  # the assistant removes the managed one
+        self.assertTrue(hand.hide_render)  # the original stays safely hidden...
+        self.assertTrue(ops.TLA_OT_snoot_restore.poll(bpy.context))  # ...and can be restored
+        bpy.ops.tla.snoot_restore()
+        self.assertEqual((hand.name, hand.hide_render), ("Key Snoot", False))
+        self.assertNotIn("tla_replaced", hand)
+        self.assertIsNotNone(snoot.find_handmade(self.ob))
+
+    def test_size_y_ignored_on_square_area_lights(self):
+        L, ob = self._area()
+        v = lightstate.apply_values(L, {"size_y": 2.0}, ob)
+        self.assertNotIn("size_y", v)
+        self.assertEqual(L.size_y, 0.25)
 
     def test_length_and_mouth_rebuild_live(self):
         bpy.ops.tla.snoot_add()
@@ -440,6 +507,7 @@ class AddonTests(unittest.TestCase):
             lightstate.apply_values(self.light, {"snoot": True}, self.ob)
         self.assertEqual(bpy.ops.tla.snoot_convert(), {"FINISHED"})
         sn = snoot.find(self.ob)
+        self.assertEqual(sn.name, self.ob.name + ".Snoot")
         self.assertAlmostEqual(sn.tla_snoot_length, 1.5 / 1.2, places=3)
         self.assertAlmostEqual(sn.tla_snoot_mouth, 0.5, places=3)
         self.assertTrue(hand.hide_render)  # hidden, not deleted

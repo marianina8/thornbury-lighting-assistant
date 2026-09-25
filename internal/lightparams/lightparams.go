@@ -259,6 +259,10 @@ func Clamp(cur Light, caps Capabilities, in Proposal, validPreset PresetValidato
 			in.Spread = nil
 		}
 	}
+	if cur.IsArea() && in.SizeY != nil && cur.Shape != "RECTANGLE" && cur.Shape != "ELLIPSE" {
+		note("size_y", "set", "dropped", "square and disk area lights use size only")
+		in.SizeY = nil
+	}
 	out.Size = num("size", in.Size, AreaSizeMin, AreaSizeMax, "area size limited to 0.01–100 m")
 	out.SizeY = num("size_y", in.SizeY, AreaSizeMin, AreaSizeMax, "area size limited to 0.01–100 m")
 	out.Spread = num("spread", in.Spread, SpreadMin, SpreadMax, "spread limited to 1°–180°")

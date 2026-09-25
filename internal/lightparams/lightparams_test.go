@@ -304,3 +304,16 @@ func TestSnootProposals(t *testing.T) {
 		t.Fatalf("custom snoot modified: %+v %+v", out, adj)
 	}
 }
+
+func TestSizeYOnlyForRectangleAndEllipse(t *testing.T) {
+	out, adj := Clamp(area(), Capabilities{}, Proposal{SizeY: fp(1)}, lib) // SQUARE
+	if out.SizeY != nil || len(adj) != 1 {
+		t.Fatalf("square: %+v %+v", out, adj)
+	}
+	cur := area()
+	cur.Shape = "ELLIPSE"
+	out, _ = Clamp(cur, Capabilities{}, Proposal{SizeY: fp(1)}, lib)
+	if out.SizeY == nil || *out.SizeY != 1 {
+		t.Fatalf("ellipse: %+v", out)
+	}
+}

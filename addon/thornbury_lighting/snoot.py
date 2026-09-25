@@ -19,6 +19,7 @@ mesh when changed.
 """
 
 import math
+import re
 
 import bmesh
 import bpy
@@ -27,8 +28,11 @@ SNOOT_SUFFIX = ".Snoot"
 MATERIAL_NAME = "TLA Snoot Black"
 ROUND_SEGMENTS = 32
 
-# Back half-width per unit of light size, and the driver expressions that
-# implement it. "shape == 1 or shape == 3" means RECTANGLE or ELLIPSE (size_y used).
+# Back half-width per unit of light size. Rectangle and ellipse area lights use
+# size_y for the snoot's y axis; square and disk use size for both. The shape
+# is baked into the drivers at refit time (and refit when the shape changes)
+# rather than read in the expression: AreaLight.shape's enum values are
+# SQUARE=0, RECTANGLE=1, DISK=4, ELLIPSE=5, not 0-3.
 SPOT_BACK = 1.08       # x shadow_soft_size (radius)
 AREA_BACK = 0.504      # x size (half of a width that's 1.008 x size)
 SPOT_MIN_RADIUS = 0.05  # a 0 m radius light still gets a 5.4 cm snoot
@@ -57,11 +61,36 @@ def find(light_obj):
     return None
 
 
+_HANDMADE_NAME = re.compile(r"(^|[\s._-])snoot(\.\d{3})?$", re.IGNORECASE)
+
+
+def _looks_like_snoot(light_obj, obj):
+    """An open tube or box along the light's forward axis, at least as wide at
+    the back as at the mouth."""
+    try:
+        m = measure(light_obj, obj)
+    except (ValueError, ZeroDivisionError):
+        return False
+    return 0.05 <= m["mouth"] <= 1.05 and 0.1 <= m["length"] <= 20
+
+
+def handmade_candidates(light_obj):
+    """Hand-built snoots: mesh children named like "Spot.Snoot" / "Key Snoot"
+    that have a snoot's shape. Anything else (a "Snoot bracket") is ignored."""
+    return [ch for ch in light_obj.children
+            if ch.type == "MESH" and not ch.get("tla_snoot") and not ch.get("tla_replaced")
+            and _HANDMADE_NAME.search(ch.name) and _looks_like_snoot(light_obj, ch)]
+
+
 def find_handmade(light_obj):
-    """A hand-built snoot (a mesh child named '*.Snoot' that isn't ours)."""
+    c = handmade_candidates(light_obj)
+    return c[0] if c else None
+
+
+def replaced_original(light_obj):
+    """A hand-built snoot hidden by Convert, which Restore can bring back."""
     for ch in light_obj.children:
-        if ch.type == "MESH" and not ch.get("tla_snoot") and not ch.get("tla_replaced") \
-                and "snoot" in ch.name.lower():
+        if ch.get("tla_replaced"):
             return ch
     return None
 
@@ -135,12 +164,14 @@ def _drive(obj, light):
     if light.type == "SPOT":
         exprs = ["max(r, %g) * %g" % (SPOT_MIN_RADIUS, SPOT_BACK)] * 3
         names = {"r": "shadow_soft_size"}
-    else:
-        sy = "(sy if shape == 1 or shape == 3 else sx)"
+    elif light.shape in {"RECTANGLE", "ELLIPSE"}:
         exprs = ["max(sx, %g) * %g" % (AREA_MIN_SIZE, AREA_BACK),
-                 "max(%s, %g) * %g" % (sy, AREA_MIN_SIZE, AREA_BACK),
-                 "max(sx, %s, %g) * %g" % (sy, AREA_MIN_SIZE, AREA_BACK)]  # length follows the larger side
-        names = {"sx": "size", "sy": "size_y", "shape": "shape"}
+                 "max(sy, %g) * %g" % (AREA_MIN_SIZE, AREA_BACK),
+                 "max(sx, sy, %g) * %g" % (AREA_MIN_SIZE, AREA_BACK)]  # length follows the larger side
+        names = {"sx": "size", "sy": "size_y"}
+    else:  # SQUARE, DISK
+        exprs = ["max(sx, %g) * %g" % (AREA_MIN_SIZE, AREA_BACK)] * 3
+        names = {"sx": "size"}
     for i, expr in enumerate(exprs):
         d = obj.driver_add("scale", i).driver
         d.type = "SCRIPTED"
@@ -154,14 +185,15 @@ def _clamp(v, lo, hi):
     return max(lo, min(hi, float(v)))
 
 
-def add(light_obj, length=None, mouth=None):
+def add(light_obj, length=None, mouth=None, _replacing=None):
     """Create (or refit) the managed snoot for a spot or area light object."""
     light = light_obj.data
     if not supported(light):
         raise ValueError("Snoots work on spot and area lights.")
-    if find_handmade(light_obj) is not None and find(light_obj) is None:
+    others = [c for c in handmade_candidates(light_obj) if c is not _replacing]
+    if others and find(light_obj) is None:
         raise ValueError("This light already has a hand-built snoot (%s). Convert it or remove it first."
-                         % find_handmade(light_obj).name)
+                         % others[0].name)
     d = DEFAULTS[light.type]
     obj = find(light_obj)
     if obj is None:
@@ -205,6 +237,13 @@ def refit(light_obj):
         return None
     light = light_obj.data
     obj["tla_round"] = is_round(light)
+    obj["tla_shape"] = light.shape if light.type == "AREA" else "SPOT"
+    if bpy.app.version >= (5, 0, 0):
+        # Files from 4.x kept these as custom properties; in 5.x bpy.props live
+        # apart, so drop the stale duplicates that would show in the UI.
+        for k in ("tla_snoot_length", "tla_snoot_mouth"):
+            if k in obj.keys():
+                del obj[k]
     _build_mesh(obj.data, obj["tla_round"], float(obj.tla_snoot_length), float(obj.tla_snoot_mouth))
     _drive(obj, light)
     return obj
@@ -212,7 +251,10 @@ def refit(light_obj):
 
 def needs_refit(light_obj):
     obj = find(light_obj)
-    return obj is not None and bool(obj.get("tla_round")) != is_round(light_obj.data)
+    if obj is None:
+        return False
+    light = light_obj.data
+    return obj.get("tla_shape") != (light.shape if light.type == "AREA" else "SPOT")
 
 
 def remove(light_obj):
@@ -251,14 +293,37 @@ def measure(light_obj, snoot_obj):
 
 def convert_handmade(light_obj):
     """Replace a hand-built snoot with a managed one of the same proportions,
-    which then scales with the light. The original is hidden, not deleted."""
-    src = find_handmade(light_obj)
-    if src is None:
+    which then scales with the light. Nothing is touched unless the managed
+    snoot is built successfully; the original is hidden, not deleted, and
+    Restore brings it back."""
+    cands = handmade_candidates(light_obj)
+    if not cands:
         raise ValueError("No hand-built snoot found on this light.")
+    if len(cands) > 1:
+        raise ValueError("More than one hand-built snoot (%s); remove or rename the extras first."
+                         % ", ".join(c.name for c in cands))
+    src = cands[0]
     m = measure(light_obj, src)
+    obj = add(light_obj, length=m["length"], mouth=m["mouth"], _replacing=src)
+    src["tla_original_name"] = src.name
+    src["tla_replaced"] = True
     src.name = src.name + " (original)"
     src.hide_viewport = src.hide_render = True
     src.hide_set(True)
-    src["tla_replaced"] = True
-    obj = add(light_obj, length=m["length"], mouth=m["mouth"])
+    obj.name = obj.data.name = light_obj.name + SNOOT_SUFFIX  # the managed one takes the clean name
     return obj, m
+
+
+def restore_original(light_obj):
+    """Bring back a hand-built snoot hidden by Convert (removing the managed one)."""
+    src = replaced_original(light_obj)
+    if src is None:
+        raise ValueError("No hidden hand-built snoot on this light.")
+    remove(light_obj)
+    src.name = src.get("tla_original_name", src.name)
+    for k in ("tla_replaced", "tla_original_name"):
+        if k in src:
+            del src[k]
+    src.hide_viewport = src.hide_render = False
+    src.hide_set(False)
+    return src

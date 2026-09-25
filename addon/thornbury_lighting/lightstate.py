@@ -170,6 +170,8 @@ def sanitize(values, light):
         out["use_square"] = bool(values["use_square"])
     if area:
         for f in ("size", "size_y"):
+            if f == "size_y" and light.shape not in {"RECTANGLE", "ELLIPSE"}:
+                continue  # Blender ignores size_y for square and disk lights
             if f in values:
                 out[f] = _clamp(float(values[f]), AREA_SIZE_MIN, AREA_SIZE_MAX)
         if "spread" in values:

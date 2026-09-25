@@ -1,6 +1,6 @@
 # Trying the Thornbury Lighting Assistant (tester guide)
 
-You need **Blender 4.2 or newer** (free, blender.org) and the two things Marian
+You need **Blender 4.2 or newer** (the demo scene needs 4.5 or newer) (free, blender.org) and the two things Marian
 sent you: a **backend URL** and an **API key** (starts with `tla_`).
 
 ## 1. Install (about 2 minutes)

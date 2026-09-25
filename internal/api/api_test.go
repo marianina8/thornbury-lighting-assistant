@@ -100,8 +100,8 @@ func TestSuggestHappyPathAuditsAndCounts(t *testing.T) {
 		t.Fatalf("%d %s", rec.Code, rec.Body)
 	}
 	prop := out["proposal"].(map[string]any)
-	if prop["spot_size"].(float64) >= math.Pi/4 {
-		t.Fatal("cone should narrow")
+	if prop["snoot"] != true {
+		t.Fatalf("'snoot the key' should add the physical snoot: %v", prop)
 	}
 	if _, ok := prop["color"]; ok {
 		t.Fatal("keep it warm: colour must not change")
@@ -118,12 +118,12 @@ func TestSuggestHappyPathAuditsAndCounts(t *testing.T) {
 		t.Fatal("plaintext key leaked into the audit trail")
 	}
 	// Outcome: edited, with applied values.
-	rec, _ = e.do("POST", "/v1/outcome", e.key, map[string]any{"request_id": id, "outcome": "edited", "applied_values": map[string]any{"spot_size": 0.4, "bogus": 1}})
+	rec, _ = e.do("POST", "/v1/outcome", e.key, map[string]any{"request_id": id, "outcome": "edited", "applied_values": map[string]any{"spot_size": 0.4, "snoot": true, "bogus": 1}})
 	if rec.Code != 200 {
 		t.Fatalf("outcome %d %s", rec.Code, rec.Body)
 	}
 	a, _ = e.st.GetAudit(context.Background(), id)
-	if a.Outcome != "edited" || !strings.Contains(a.AppliedValues, "0.4") || strings.Contains(a.AppliedValues, "bogus") {
+	if a.Outcome != "edited" || !strings.Contains(a.AppliedValues, "0.4") || !strings.Contains(a.AppliedValues, `"snoot":true`) || strings.Contains(a.AppliedValues, "bogus") {
 		t.Fatalf("outcome stored wrong: %+v", a)
 	}
 	rec, _ = e.do("POST", "/v1/outcome", e.key, map[string]any{"request_id": id, "outcome": "applied"})
@@ -338,6 +338,23 @@ func TestOutOfScopeIsAuditedAndCarriesNothing(t *testing.T) {
 	rec, _ = e.do("POST", "/v1/outcome", e.key, map[string]any{"request_id": out["request_id"], "outcome": "applied"})
 	if rec.Code != http.StatusConflict {
 		t.Fatal("cannot apply an out-of-scope answer")
+	}
+}
+
+func TestAreaLightSuggest(t *testing.T) {
+	e := setup(t, 50, nil)
+	req := SuggestRequest{Note: "put a snoot on it and tighten the spread", Light: lightparams.Light{Name: "Soft", Type: "AREA",
+		Energy: 400, Color: [3]float64{1, 1, 1}, Size: 0.25, SizeY: 0.25, Shape: "SQUARE", Spread: math.Pi, Preset: "none"}}
+	rec, out := e.do("POST", "/v1/suggest", e.key, req)
+	if rec.Code != 200 {
+		t.Fatalf("%d %s", rec.Code, rec.Body)
+	}
+	p := out["proposal"].(map[string]any)
+	if p["snoot"] != true {
+		t.Fatalf("area snoot: %v", p)
+	}
+	if _, ok := p["spot_size"]; ok {
+		t.Fatal("spot field on an area light")
 	}
 }
 

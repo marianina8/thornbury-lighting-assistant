@@ -229,3 +229,78 @@ func TestValidateCurrent(t *testing.T) {
 		t.Fatalf("float32 max should be accepted: %v", err)
 	}
 }
+
+func area() Light {
+	return Light{Name: "Soft", Type: "AREA", Energy: 400, Color: [3]float64{1, 1, 1}, Size: 0.25, SizeY: 0.25,
+		Shape: "SQUARE", Spread: math.Pi, Preset: "none"}
+}
+
+func TestAreaLightValidates(t *testing.T) {
+	if err := ValidateCurrent(area()); err != nil {
+		t.Fatal(err)
+	}
+	bad := area()
+	bad.Shape = "TRIANGLE"
+	if ValidateCurrent(bad) == nil {
+		t.Fatal("unknown shape accepted")
+	}
+	bad = area()
+	bad.Spread = 4
+	if ValidateCurrent(bad) == nil {
+		t.Fatal("spread > 180° accepted")
+	}
+	bad = area()
+	bad.Type = "SUN"
+	if ValidateCurrent(bad) == nil {
+		t.Fatal("sun accepted")
+	}
+}
+
+func TestSettingsNeverCrossLightTypes(t *testing.T) {
+	out, adj := Clamp(area(), Capabilities{}, Proposal{SpotSize: fp(0.3), SpotBlend: fp(0.2), UseSquare: bp(true),
+		ShadowSoftSize: fp(1), Preset: sp("gobo_window_blinds"), Size: fp(0.5), Spread: fp(0)}, lib)
+	if out.SpotSize != nil || out.SpotBlend != nil || out.UseSquare != nil || out.ShadowSoftSize != nil || out.Preset != nil {
+		t.Fatalf("spot settings leaked onto an area light: %+v", out)
+	}
+	if *out.Size != 0.5 || *out.Spread != SpreadMin {
+		t.Fatalf("area settings: %+v", out)
+	}
+	if len(adj) != 6 {
+		t.Fatalf("want 6 adjustments, got %d: %+v", len(adj), adj)
+	}
+	out, adj = Clamp(base(), Capabilities{}, Proposal{Size: fp(2), SizeY: fp(2), Spread: fp(1)}, lib)
+	if !out.Empty() || len(adj) != 3 {
+		t.Fatalf("area settings leaked onto a spot light: %+v %+v", out, adj)
+	}
+}
+
+func TestSnootProposals(t *testing.T) {
+	// Add with shape.
+	out, _ := Clamp(base(), Capabilities{}, Proposal{Snoot: bp(true), SnootMouth: fp(0.05), SnootLength: fp(99)}, lib)
+	if !*out.Snoot || *out.SnootMouth != SnootMouthMin || *out.SnootLength != SnootLengthMax {
+		t.Fatalf("add: %+v", out)
+	}
+	// Shaping a snoot that isn't there implies adding one.
+	out, _ = Clamp(area(), Capabilities{}, Proposal{SnootMouth: fp(0.4)}, lib)
+	if out.Snoot == nil || !*out.Snoot {
+		t.Fatalf("implied add: %+v", out)
+	}
+	// Removing ignores shape fields.
+	cur := base()
+	cur.Snoot, cur.SnootLength, cur.SnootMouth = true, 1, 0.5
+	out, adj := Clamp(cur, Capabilities{}, Proposal{Snoot: bp(false), SnootMouth: fp(0.3)}, lib)
+	if *out.Snoot || out.SnootMouth != nil || len(adj) != 1 {
+		t.Fatalf("remove: %+v %+v", out, adj)
+	}
+	// No-ops dropped.
+	out, _ = Clamp(cur, Capabilities{}, Proposal{Snoot: bp(true), SnootLength: fp(1), SnootMouth: fp(0.5)}, lib)
+	if !out.Empty() {
+		t.Fatalf("no-op snoot: %+v", out)
+	}
+	// A hand-built snoot is never touched.
+	cur.SnootCustom = true
+	out, adj = Clamp(cur, Capabilities{}, Proposal{Snoot: bp(false)}, lib)
+	if out.Snoot != nil || !strings.Contains(adj[0].Reason, "hand-built") {
+		t.Fatalf("custom snoot modified: %+v %+v", out, adj)
+	}
+}

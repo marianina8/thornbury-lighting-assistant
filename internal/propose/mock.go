@@ -47,29 +47,60 @@ func (m *Mock) Propose(_ context.Context, in Input) (Output, Usage, error) {
 		out.Confidence = &conf
 		return out, Usage{InputTokens: 900, OutputTokens: 60}, nil
 	}
-	if has("snoot", "tighten", "narrow", "spill", "tighter") {
-		v := math.Max(1, cone*0.6)
-		out.ConeAngleDeg = &v
-		did = append(did, "narrowed the cone")
+	area := in.Light.IsArea()
+	switch {
+	case has("lose the snoot", "remove the snoot", "take the snoot off", "no snoot"):
+		f := false
+		out.Snoot = &f
+		did = append(did, "removed the snoot")
+	case has("snoot") && in.Light.Snoot:
+		v := math.Max(0.2, in.Light.SnootMouth*0.7)
+		out.SnootMouth = &v
+		did = append(did, "tightened the snoot's mouth")
+	case has("snoot"):
+		t := true
+		out.Snoot = &t
+		did = append(did, "added a snoot")
+	case has("tighten", "narrow", "spill", "tighter"):
+		if area {
+			v := math.Max(1, in.Light.Spread*180/math.Pi*0.6)
+			out.SpreadDeg = &v
+			did = append(did, "reduced the spread")
+		} else {
+			v := math.Max(1, cone*0.6)
+			out.ConeAngleDeg = &v
+			did = append(did, "narrowed the cone")
+		}
 	}
 	if has("wider", "open up", "widen") {
-		v := math.Min(180, cone*1.4)
-		out.ConeAngleDeg = &v
-		did = append(did, "widened the cone")
+		if area {
+			v := math.Min(180, in.Light.Spread*180/math.Pi*1.4)
+			out.SpreadDeg = &v
+			did = append(did, "increased the spread")
+		} else {
+			v := math.Min(180, cone*1.4)
+			out.ConeAngleDeg = &v
+			did = append(did, "widened the cone")
+		}
 	}
-	if has("feather", "soften the edge", "soft edge", "softer edge") {
+	if has("feather", "soften the edge", "soft edge", "softer edge") && !area {
 		v := math.Min(1, in.Light.SpotBlend+0.25)
 		out.Blend = &v
 		did = append(did, "feathered the edge")
 	}
-	if has("hard edge", "harder edge", "crisp") {
+	if has("hard edge", "harder edge", "crisp") && !area {
 		v := math.Max(0, in.Light.SpotBlend-0.1)
 		out.Blend = &v
 		did = append(did, "hardened the edge")
 	}
 	if has("softer shadow", "soft shadow") {
-		v := math.Max(0.05, in.Light.ShadowSoftSize*2)
-		out.RadiusM = &v
+		if area {
+			v := math.Max(0.05, in.Light.Size*2)
+			out.SizeM = &v
+		} else {
+			v := math.Max(0.05, in.Light.ShadowSoftSize*2)
+			out.RadiusM = &v
+		}
 		did = append(did, "softened the shadows")
 	}
 	if has("brighter", "up a stop", "stop up", "more light") {
@@ -92,7 +123,9 @@ func (m *Mock) Propose(_ context.Context, in Input) (Output, Usage, error) {
 		out.ColorTemperatureK = &k
 		did = append(did, "cooled to 8000 K")
 	}
-	if has("blinds") {
+	if area {
+		// gobo/IES presets are spot-only
+	} else if has("blinds") {
 		p := "gobo_window_blinds"
 		out.Preset = &p
 		did = append(did, "added the blinds gobo")

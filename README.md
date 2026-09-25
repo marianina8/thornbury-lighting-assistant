@@ -3,10 +3,33 @@
 **Demo 7 of the AI workflow portfolio.** A Blender addon plus a Go/AWS backend
 that turns a lighting artist's plain-language note ("snoot the key down so it
 stops spilling on the background, keep it warm") into proposed settings for
-the selected spot light. The artist sees a diff and clicks **Apply** (one
+the selected spot or area light, including a **physical snoot**. The artist sees a diff and clicks **Apply** (one
 undo step) or **Discard**. Nothing is ever applied automatically.
 
 ![Preset library rendered in Cycles through the addon's own node wiring](docs/img/preset-library.png)
+
+## Snoots
+
+A snoot here is real geometry, not a shader trick: an open, tapered tube (spot
+lights, and disk or ellipse area lights) or box (square or rectangle area
+lights) parented to the light, which physically blocks spill in Cycles.
+Proportions come from Marian's hand-built examples in `demo/thornbury_demo.blend`:
+
+| | Back opening | Mouth | Length |
+|---|---|---|---|
+| Spot | 1.08 × light radius | 0.5 × back | 1.0 × back width |
+| Area | 1.008 × light size | 0.5 × back | 2.6 × back width |
+
+**It scales with the light.** The snoot's scale is driven by the light's
+Radius (spot) or Size/Size Y (area) through simple-expression drivers, which
+Blender evaluates even with "auto-run Python scripts" off. Being parented,
+it also follows the light's position, rotation and object scale.
+
+- **Length** and **Mouth** rebuild the mesh live.
+- **Add Snoot** / **Remove Snoot** are plain tools: no model call, one undo step each.
+- **Convert Hand-Built Snoot** measures an existing hand-made snoot and replaces it with a managed one of the same proportions. The original is hidden, not deleted.
+- The assistant can add, tighten (smaller mouth or longer tube) or remove a snoot from a note, but never modifies a hand-built one.
+- `make render-check` renders the demo scene with and without each snoot and checks the spill is cut.
 
 ## Who it's for
 

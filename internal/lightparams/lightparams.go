@@ -1,9 +1,9 @@
 // Package lightparams is the contract between the backend and Blender's
-// SpotLight data-block. Every value the model proposes passes through Clamp
+// SpotLight and AreaLight data-blocks (plus the addon's physical snoot). Every value the model proposes passes through Clamp
 // before it can reach the addon, so an out-of-range or nonsensical value is
 // corrected (and reported) in plain code, never trusted.
 //
-// Ranges were read from the live RNA definitions (bpy.types.SpotLight.bl_rna)
+// Ranges were read from the live RNA definitions (bpy.types.SpotLight/AreaLight.bl_rna)
 // of Blender 4.2.0, 4.5.14 LTS, 5.0.1, 5.1.2 and 5.2.2 LTS on 2026-09-24.
 // They were identical in every version; see docs/blender-api-verification.md.
 package lightparams
@@ -42,9 +42,23 @@ const (
 	ColorChannelMin    = 0.0 // RNA hard_min
 	ColorChannelMax    = 1.0 // RNA soft_max; values above 1 are legal in Blender but never proposed.
 	ShadowSoftSizeMax  = 100.0 // RNA soft_max (metres)
+
+	// Area lights: RNA size/size_y are 0 – FLT_MAX (soft 100); spread 0 – 180°.
+	AreaSizeMin = 0.01 // a 0 m area light is degenerate
+	AreaSizeMax = 100.0
+	SpreadMin   = math.Pi / 180 // 1°
+	SpreadMax   = math.Pi
+
+	// Snoot proportions, relative to its back opening (the addon's snoot.py).
+	SnootLengthMin, SnootLengthMax = 0.25, 6.0
+	SnootMouthMin, SnootMouthMax   = 0.2, 1.0
 )
 
-// Light is the state of one spot light as the addon reads it from bpy.
+// AreaShapes are Blender's AreaLight.shape values.
+var AreaShapes = map[string]bool{"SQUARE": true, "RECTANGLE": true, "DISK": true, "ELLIPSE": true}
+
+// Light is the state of one spot or area light as the addon reads it from bpy.
+// Spot-only fields are zero for area lights and vice versa.
 // Temperature fields are only meaningful when Capabilities.Temperature is true
 // (Blender 4.5+).
 type Light struct {
@@ -63,7 +77,23 @@ type Light struct {
 	// "custom" when the artist built their own node tree (which the addon
 	// never modifies).
 	Preset string `json:"preset"`
+
+	// Area lights.
+	Size   float64 `json:"size,omitempty"`
+	SizeY  float64 `json:"size_y,omitempty"`
+	Shape  string  `json:"shape,omitempty"`
+	Spread float64 `json:"spread,omitempty"`
+
+	// The physical snoot (a child mesh the addon manages). SnootCustom means
+	// the artist built one by hand, which the assistant never modifies.
+	Snoot       bool    `json:"snoot"`
+	SnootLength float64 `json:"snoot_length,omitempty"`
+	SnootMouth  float64 `json:"snoot_mouth,omitempty"`
+	SnootCustom bool    `json:"snoot_custom,omitempty"`
 }
+
+// IsArea reports whether this is an area light.
+func (l Light) IsArea() bool { return l.Type == "AREA" }
 
 // Capabilities describes what the artist's Blender build supports.
 type Capabilities struct {
@@ -81,13 +111,20 @@ type Proposal struct {
 	UseTemperature *bool       `json:"use_temperature,omitempty"`
 	Temperature    *float64    `json:"temperature,omitempty"`
 	Preset         *string     `json:"preset,omitempty"`
+	Size           *float64    `json:"size,omitempty"`
+	SizeY          *float64    `json:"size_y,omitempty"`
+	Spread         *float64    `json:"spread,omitempty"`
+	Snoot          *bool       `json:"snoot,omitempty"`
+	SnootLength    *float64    `json:"snoot_length,omitempty"`
+	SnootMouth     *float64    `json:"snoot_mouth,omitempty"`
 }
 
 // Empty reports whether the proposal changes nothing.
 func (p Proposal) Empty() bool {
 	return p.SpotSize == nil && p.SpotBlend == nil && p.Energy == nil && p.Color == nil &&
 		p.ShadowSoftSize == nil && p.UseSquare == nil && p.UseTemperature == nil &&
-		p.Temperature == nil && p.Preset == nil
+		p.Temperature == nil && p.Preset == nil && p.Size == nil && p.SizeY == nil && p.Spread == nil &&
+		p.Snoot == nil && p.SnootLength == nil && p.SnootMouth == nil
 }
 
 // Adjustment records a value the code changed or dropped, so the artist sees
@@ -105,8 +142,8 @@ type PresetValidator func(id string) bool
 // ValidateCurrent checks the state the addon sent. It rejects rather than
 // clamps: bad input here means a broken or tampered client.
 func ValidateCurrent(l Light) error {
-	if l.Type != "SPOT" {
-		return fmt.Errorf("only spot lights are supported (got %q)", l.Type)
+	if l.Type != "SPOT" && l.Type != "AREA" {
+		return fmt.Errorf("only spot and area lights are supported (got %q)", l.Type)
 	}
 	if len(l.Name) == 0 || len(l.Name) > 128 {
 		return fmt.Errorf("light name must be 1-128 characters")
@@ -115,6 +152,8 @@ func ValidateCurrent(l Light) error {
 		"spot_size": l.SpotSize, "spot_blend": l.SpotBlend, "energy": l.Energy,
 		"shadow_soft_size": l.ShadowSoftSize, "temperature": l.Temperature,
 		"color.r": l.Color[0], "color.g": l.Color[1], "color.b": l.Color[2],
+		"size": l.Size, "size_y": l.SizeY, "spread": l.Spread,
+		"snoot_length": l.SnootLength, "snoot_mouth": l.SnootMouth,
 	}
 	for k, v := range nums {
 		if math.IsNaN(v) || math.IsInf(v, 0) {
@@ -123,14 +162,26 @@ func ValidateCurrent(l Light) error {
 	}
 	// Allow float32 rounding slack on the values Blender itself enforces.
 	const eps = 1e-6
-	if l.SpotSize < SpotSizeMin-eps || l.SpotSize > SpotSizeMax+eps {
-		return fmt.Errorf("spot_size %.6f outside Blender's range", l.SpotSize)
-	}
-	if l.SpotBlend < -eps || l.SpotBlend > 1+eps {
-		return fmt.Errorf("spot_blend %.6f outside Blender's range", l.SpotBlend)
-	}
-	if l.ShadowSoftSize < -eps {
-		return fmt.Errorf("shadow_soft_size is negative")
+	if l.IsArea() {
+		if l.Size < -eps || l.SizeY < -eps {
+			return fmt.Errorf("area size is negative")
+		}
+		if l.Spread < -eps || l.Spread > SpreadMax+eps {
+			return fmt.Errorf("spread %.6f outside Blender's range", l.Spread)
+		}
+		if !AreaShapes[l.Shape] {
+			return fmt.Errorf("unknown area shape %q", l.Shape)
+		}
+	} else {
+		if l.SpotSize < SpotSizeMin-eps || l.SpotSize > SpotSizeMax+eps {
+			return fmt.Errorf("spot_size %.6f outside Blender's range", l.SpotSize)
+		}
+		if l.SpotBlend < -eps || l.SpotBlend > 1+eps {
+			return fmt.Errorf("spot_blend %.6f outside Blender's range", l.SpotBlend)
+		}
+		if l.ShadowSoftSize < -eps {
+			return fmt.Errorf("shadow_soft_size is negative")
+		}
 	}
 	if len(l.Preset) > 64 {
 		return fmt.Errorf("preset id too long")
@@ -167,6 +218,69 @@ func Clamp(cur Light, caps Capabilities, in Proposal, validPreset PresetValidato
 			note(field, f(v), f(c), why)
 		}
 		return &c
+	}
+
+	// Settings that don't exist on this light type are dropped, never guessed.
+	notHere := func(field string, set bool) bool {
+		if set {
+			kind := "a spot"
+			if cur.IsArea() {
+				kind = "an area"
+			}
+			note(field, "set", "dropped", "not a setting of "+kind+" light")
+		}
+		return set
+	}
+	if cur.IsArea() {
+		if notHere("spot_size", in.SpotSize != nil) {
+			in.SpotSize = nil
+		}
+		if notHere("spot_blend", in.SpotBlend != nil) {
+			in.SpotBlend = nil
+		}
+		if notHere("shadow_soft_size", in.ShadowSoftSize != nil) {
+			in.ShadowSoftSize = nil
+		}
+		if notHere("use_square", in.UseSquare != nil) {
+			in.UseSquare = nil
+		}
+		if in.Preset != nil {
+			note("preset", *in.Preset, "dropped", "gobo/IES presets are for spot lights")
+			in.Preset = nil
+		}
+	} else {
+		if notHere("size", in.Size != nil) {
+			in.Size = nil
+		}
+		if notHere("size_y", in.SizeY != nil) {
+			in.SizeY = nil
+		}
+		if notHere("spread", in.Spread != nil) {
+			in.Spread = nil
+		}
+	}
+	out.Size = num("size", in.Size, AreaSizeMin, AreaSizeMax, "area size limited to 0.01–100 m")
+	out.SizeY = num("size_y", in.SizeY, AreaSizeMin, AreaSizeMax, "area size limited to 0.01–100 m")
+	out.Spread = num("spread", in.Spread, SpreadMin, SpreadMax, "spread limited to 1°–180°")
+
+	// Snoot: the addon's physical snoot. A hand-built one is never modified.
+	if in.Snoot != nil || in.SnootLength != nil || in.SnootMouth != nil {
+		if cur.SnootCustom {
+			note("snoot", "change", "dropped", "this light has a hand-built snoot; convert it in the panel first")
+		} else if in.Snoot != nil && !*in.Snoot {
+			out.Snoot = in.Snoot
+			if in.SnootLength != nil || in.SnootMouth != nil {
+				note("snoot_length/mouth", "set", "dropped", "the snoot is being removed")
+			}
+		} else {
+			out.Snoot = in.Snoot
+			out.SnootLength = num("snoot_length", in.SnootLength, SnootLengthMin, SnootLengthMax, "snoot length limited to 0.25–6× its opening")
+			out.SnootMouth = num("snoot_mouth", in.SnootMouth, SnootMouthMin, SnootMouthMax, "snoot mouth limited to 0.2–1× its opening")
+			if out.Snoot == nil && !cur.Snoot && (out.SnootLength != nil || out.SnootMouth != nil) {
+				t := true
+				out.Snoot = &t // shaping a snoot that isn't there means adding one
+			}
+		}
 	}
 
 	out.SpotSize = num("spot_size", in.SpotSize, SpotSizeMin, SpotSizeMax, "Blender's spot size range is 1°–180°")
@@ -284,6 +398,24 @@ func dropNoOps(cur Light, p Proposal) Proposal {
 	}
 	if p.Preset != nil && *p.Preset == cur.Preset {
 		p.Preset = nil
+	}
+	if p.Size != nil && same(*p.Size, cur.Size) {
+		p.Size = nil
+	}
+	if p.SizeY != nil && same(*p.SizeY, cur.SizeY) {
+		p.SizeY = nil
+	}
+	if p.Spread != nil && same(*p.Spread, cur.Spread) {
+		p.Spread = nil
+	}
+	if p.Snoot != nil && *p.Snoot == cur.Snoot {
+		p.Snoot = nil
+	}
+	if cur.Snoot && p.SnootLength != nil && same(*p.SnootLength, cur.SnootLength) {
+		p.SnootLength = nil
+	}
+	if cur.Snoot && p.SnootMouth != nil && same(*p.SnootMouth, cur.SnootMouth) {
+		p.SnootMouth = nil
 	}
 	return p
 }

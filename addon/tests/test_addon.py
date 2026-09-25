@@ -39,13 +39,14 @@ bpy.context.preferences.system.use_online_access = True
 
 
 def _load_modules():
-    global tla, jobs, lightstate, ops, props, client, _real_report
+    global tla, jobs, lightstate, ops, props, client, snoot, _real_report
     tla = importlib.import_module(PKG)
     jobs = importlib.import_module(PKG + ".jobs")
     lightstate = importlib.import_module(PKG + ".lightstate")
     ops = importlib.import_module(PKG + ".ops")
     props = importlib.import_module(PKG + ".props")
     client = importlib.import_module(PKG + ".client")
+    snoot = importlib.import_module(PKG + ".snoot")
     _real_report = ops._report_outcome
 
 
@@ -53,7 +54,7 @@ _load_modules()
 
 
 def new_scene():
-    for coll in (bpy.data.objects, bpy.data.lights, bpy.data.images, bpy.data.texts):
+    for coll in (bpy.data.objects, bpy.data.lights, bpy.data.meshes, bpy.data.images, bpy.data.texts):
         for item in list(coll):
             coll.remove(item)
     sc = bpy.context.scene
@@ -330,6 +331,156 @@ class AddonTests(unittest.TestCase):
         p = bpy.context.preferences.addons[PKG].preferences
         self.assertGreaterEqual(p.bl_rna.properties["timeout"].hard_min, 30)
 
+    # --------------------------------------------------------------- snoots
+    def _area(self):
+        L = bpy.data.lights.new("Soft", "AREA")
+        L.size, L.energy = 0.25, 400.0
+        ob = bpy.data.objects.new("Soft", L)
+        bpy.context.scene.collection.objects.link(ob)
+        ob.scale = (1.5, 1.5, 1.5)
+        return L, ob
+
+    def _extent(self, light_obj, sn):
+        """(back half-width, mouth half-width, length) in the light's local space."""
+        dg = bpy.context.evaluated_depsgraph_get()
+        dg.update()
+        ev = sn.evaluated_get(dg)
+        M = light_obj.matrix_world.inverted() @ ev.matrix_world
+        vs = [M @ v.co for v in sn.data.vertices]
+        zmax, zmin = max(v.z for v in vs), min(v.z for v in vs)
+        back = max(max(abs(v.x), abs(v.y)) for v in vs if abs(v.z - zmax) < 1e-4)
+        front = max(max(abs(v.x), abs(v.y)) for v in vs if abs(v.z - zmin) < 1e-4)
+        return back, front, zmax - zmin
+
+    def test_spot_snoot_matches_the_hand_built_example(self):
+        """Marian's spot example: back radius 1.08 x light radius, mouth half, length = back width."""
+        self.light.shadow_soft_size = 0.5
+        self.assertEqual(bpy.ops.tla.snoot_add(), {"FINISHED"})
+        sn = snoot.find(self.ob)
+        self.assertIsNotNone(sn)
+        self.assertEqual(sn.parent, self.ob)
+        self.assertEqual(len(sn.data.polygons), 32)  # open round tube
+        back, front, length = self._extent(self.ob, sn)
+        self.assertAlmostEqual(back, 0.54, places=3)
+        self.assertAlmostEqual(front, 0.27, places=3)
+        self.assertAlmostEqual(length, 1.08, places=3)
+        self.assertEqual(sn.data.materials[0].name, snoot.MATERIAL_NAME)
+        self.assertTrue(all(fc.driver.is_simple_expression for fc in sn.animation_data.drivers))
+
+    def test_snoot_scales_with_the_light(self):
+        self.light.shadow_soft_size = 0.5
+        bpy.ops.tla.snoot_add()
+        sn = snoot.find(self.ob)
+        self.light.shadow_soft_size = 1.0
+        back, front, length = self._extent(self.ob, sn)
+        self.assertAlmostEqual(back, 1.08, places=3)
+        self.assertAlmostEqual(length, 2.16, places=3)
+        self.light.shadow_soft_size = 0.0  # a point light still gets a small snoot
+        back, _, _ = self._extent(self.ob, sn)
+        self.assertAlmostEqual(back, 0.054, places=3)
+
+    def test_area_snoot_matches_the_hand_built_example(self):
+        """Marian's area example: box, width = light size, mouth half, length 2.6 x width."""
+        L, ob = self._area()
+        bpy.context.view_layer.objects.active = ob
+        bpy.ops.tla.snoot_add()
+        sn = snoot.find(ob)
+        self.assertEqual(len(sn.data.polygons), 4)  # open box
+        back, front, length = self._extent(ob, sn)
+        self.assertAlmostEqual(back, 0.126, places=3)
+        self.assertAlmostEqual(front, 0.063, places=3)
+        self.assertAlmostEqual(length, 0.655, places=2)
+        L.size = 0.5
+        back, _, _ = self._extent(ob, sn)
+        self.assertAlmostEqual(back, 0.252, places=3)
+        L.shape, L.size_y = "RECTANGLE", 1.0  # y follows size_y for rectangles
+        dg = bpy.context.evaluated_depsgraph_get(); dg.update()
+        self.assertAlmostEqual(sn.evaluated_get(dg).scale[1], 0.504, places=3)
+        L.shape = "DISK"
+        self.assertTrue(snoot.needs_refit(ob))
+        bpy.ops.tla.snoot_refit()
+        self.assertEqual(len(snoot.find(ob).data.polygons), 32)
+
+    def test_length_and_mouth_rebuild_live(self):
+        bpy.ops.tla.snoot_add()
+        sn = snoot.find(self.ob)
+        sn.tla_snoot_mouth = 1.0  # UI slider -> update callback
+        sn.tla_snoot_length = 2.0
+        back, front, length = self._extent(self.ob, sn)
+        self.assertAlmostEqual(front, back, places=4)
+        self.assertAlmostEqual(length, 4 * back, places=3)
+
+    def test_remove_snoot_and_undo_flags(self):
+        for op in (ops.TLA_OT_snoot_add, ops.TLA_OT_snoot_remove, ops.TLA_OT_snoot_refit, ops.TLA_OT_snoot_convert):
+            self.assertIn("UNDO", op.bl_options)
+        bpy.ops.tla.snoot_add()
+        self.assertFalse(ops.TLA_OT_snoot_add.poll(bpy.context))  # one snoot per light
+        bpy.ops.tla.snoot_remove()
+        self.assertIsNone(snoot.find(self.ob))
+        self.assertFalse(any(m.name.endswith(".Snoot") for m in bpy.data.meshes))
+
+    def test_convert_hand_built_snoot_keeps_its_proportions(self):
+        """Like the hand-made ones in thornbury_demo.blend: a plain mesh child named *.Snoot."""
+        self.light.shadow_soft_size = 0.5
+        import bmesh as _bm
+        me = bpy.data.meshes.new("Cylinder.001")
+        bm = _bm.new()
+        n, back, front, z1 = 16, 0.6, 0.3, -1.5
+        a = [bm.verts.new((back * math.cos(2 * math.pi * i / n), back * math.sin(2 * math.pi * i / n), 0)) for i in range(n)]
+        b = [bm.verts.new((front * math.cos(2 * math.pi * i / n), front * math.sin(2 * math.pi * i / n), z1)) for i in range(n)]
+        for i in range(n):
+            bm.faces.new((a[i], a[(i + 1) % n], b[(i + 1) % n], b[i]))
+        bm.to_mesh(me); bm.free()
+        hand = bpy.data.objects.new("Spot.Snoot", me)
+        bpy.context.scene.collection.objects.link(hand)
+        hand.parent = self.ob
+        self.assertEqual(lightstate.read_state(self.light, self.ob).get("snoot_custom"), True)
+        self.assertFalse(ops.TLA_OT_snoot_add.poll(bpy.context))
+        with self.assertRaises(ValueError):
+            lightstate.apply_values(self.light, {"snoot": True}, self.ob)
+        self.assertEqual(bpy.ops.tla.snoot_convert(), {"FINISHED"})
+        sn = snoot.find(self.ob)
+        self.assertAlmostEqual(sn.tla_snoot_length, 1.5 / 1.2, places=3)
+        self.assertAlmostEqual(sn.tla_snoot_mouth, 0.5, places=3)
+        self.assertTrue(hand.hide_render)  # hidden, not deleted
+        self.assertIn(hand.name, bpy.data.objects)
+
+    def test_assistant_can_add_adjust_and_remove_a_snoot(self):
+        st = self._ready({"snoot": True, "snoot_mouth": 0.35})
+        ops._report_outcome = lambda *a, **k: None
+        self.assertEqual({r.field for r in st.rows}, {"snoot", "snoot_mouth"})
+        bpy.ops.tla.apply()
+        sn = snoot.find(self.ob)
+        self.assertAlmostEqual(sn.tla_snoot_mouth, 0.35, places=4)
+        self.assertEqual(lightstate.read_state(self.light, self.ob)["snoot"], True)
+        lightstate.apply_values(self.light, {"snoot_length": 2.0}, self.ob)
+        self.assertAlmostEqual(snoot.find(self.ob).tla_snoot_length, 2.0)
+        lightstate.apply_values(self.light, {"snoot": False}, self.ob)
+        self.assertIsNone(snoot.find(self.ob))
+
+    def test_failed_apply_rolls_the_snoot_back_too(self):
+        orig = lightstate._update_gobo_scale
+        lightstate.apply_values(self.light, {"preset": "gobo_slot"}, self.ob)
+        lightstate._update_gobo_scale = lambda *a: (_ for _ in ()).throw(RuntimeError("boom"))
+        try:
+            with self.assertRaises(RuntimeError):
+                lightstate.apply_values(self.light, {"energy": 5.0, "snoot": True}, self.ob)
+        finally:
+            lightstate._update_gobo_scale = orig
+        self.assertIsNone(snoot.find(self.ob))
+        self.assertEqual(self.light.energy, 1000.0)
+
+    def test_area_light_state_and_apply(self):
+        L, ob = self._area()
+        s = lightstate.read_state(L, ob)
+        self.assertEqual((s["type"], s["size"], s["shape"], s["snoot"]), ("AREA", 0.25, "SQUARE", False))
+        self.assertNotIn("spot_size", s)
+        v = lightstate.apply_values(L, {"size": 0.5, "spread": 0.0, "spot_size": 0.3, "preset": "gobo_slot", "energy": 200}, ob)
+        self.assertEqual(L.size, 0.5)
+        self.assertAlmostEqual(L.spread, math.radians(1.0), places=5)
+        self.assertNotIn("spot_size", v)  # spot-only fields never touch an area light
+        self.assertNotIn("preset", v)
+
     # ---------------------------------------------------------------- e2e
     @unittest.skipUnless(BACKEND and KEY, "set TLA_BACKEND and TLA_KEY (cmd/local) for the end-to-end test")
     def test_end_to_end_against_backend(self):
@@ -343,11 +494,11 @@ class AddonTests(unittest.TestCase):
         self.assertEqual(st.status, "READY", st.message)
         rid = st.request_id
         fields = {r.field for r in st.rows}
-        self.assertIn("spot_size", fields)
-        self.assertNotIn("color", fields)
-        before = self.light.spot_size
+        self.assertIn("snoot", fields)  # "snoot" means the physical snoot
+        self.assertNotIn("color", fields)  # "keep it warm"
+        self.assertIsNone(snoot.find(self.ob))
         self.assertEqual(bpy.ops.tla.apply(), {"FINISHED"})
-        self.assertLess(self.light.spot_size, before)
+        self.assertIsNotNone(snoot.find(self.ob))
         self.assertTrue(jobs.wait_all(30))
         with urllib.request.urlopen(BACKEND + "/local/audit") as r:
             audit = {a["request_id"]: a for a in json.load(r)}

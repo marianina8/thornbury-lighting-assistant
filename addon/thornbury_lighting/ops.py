@@ -7,7 +7,7 @@ import uuid
 
 import bpy
 
-from . import client, jobs, lightstate, props
+from . import client, jobs, lightstate, props, snoot
 
 CLIENT_VERSION = "0.1.0"
 
@@ -20,9 +20,10 @@ def state(context=None):
     return (context or bpy.context).window_manager.tla
 
 
-def active_spot(context):
+def active_light(context):
+    """The selected spot or area light (data), or None."""
     ob = context.object
-    if ob is not None and ob.type == "LIGHT" and ob.data.type == "SPOT":
+    if ob is not None and ob.type == "LIGHT" and ob.data.type in lightstate.SUPPORTED_TYPES:
         return ob.data
     return None
 
@@ -36,7 +37,7 @@ def redraw():
 
 def proposal_light(context):
     """The light the current proposal was made for, if it's still selected."""
-    st, light = state(context), active_spot(context)
+    st, light = state(context), active_light(context)
     if light is None or light.name != st.light_name or light.session_uid != st.light_uid:
         return None
     return light
@@ -62,10 +63,10 @@ class TLA_OT_suggest(bpy.types.Operator):
 
     @classmethod
     def poll(cls, context):
-        return active_spot(context) is not None and state(context).status != "WAITING"
+        return active_light(context) is not None and state(context).status != "WAITING"
 
     def execute(self, context):
-        st, p, light = state(context), prefs(context), active_spot(context)
+        st, p, light = state(context), prefs(context), active_light(context)
         if not p.backend_url.strip() or not p.api_key.strip():
             self.report({"ERROR"}, "Set the backend URL and API key in the add-on's preferences first.")
             return {"CANCELLED"}
@@ -77,7 +78,7 @@ class TLA_OT_suggest(bpy.types.Operator):
             self.report({"ERROR"}, "Type a lighting note first.")
             return {"CANCELLED"}
 
-        current = lightstate.read_state(light)
+        current = lightstate.read_state(light, context.object)
         payload = {"note": note, "light": current, "capabilities": lightstate.capabilities(light),
                    "blender_version": bpy.app.version_string, "client_version": CLIENT_VERSION}
         st.clear()
@@ -143,7 +144,7 @@ class TLA_OT_apply(bpy.types.Operator):
             return {"CANCELLED"}
         edited = any((not r.include) or r.edited() for r in st.rows)
         try:
-            applied = lightstate.apply_values(light, values)  # all-or-nothing
+            applied = lightstate.apply_values(light, values, context.object)  # all-or-nothing
         except Exception as e:
             self.report({"ERROR"}, "Not applied; the light's settings are unchanged: %s" % e)
             return {"CANCELLED"}
@@ -199,7 +200,86 @@ class TLA_OT_test_connection(bpy.types.Operator):
         return {"FINISHED"}
 
 
-classes = (TLA_OT_suggest, TLA_OT_apply, TLA_OT_discard, TLA_OT_test_connection)
+# ------------------------------------------------------------------ snoots
+# Plain, deterministic tools: no model call, one undo step each.
+
+def _light_obj(context):
+    return context.object if active_light(context) is not None else None
+
+
+class TLA_OT_snoot_add(bpy.types.Operator):
+    bl_idname = "tla.snoot_add"
+    bl_label = "Add Snoot"
+    bl_description = "Put a physical snoot (open tapered tube/box) on this light; it scales with the light's size"
+    bl_options = {"REGISTER", "UNDO"}
+
+    @classmethod
+    def poll(cls, context):
+        ob = _light_obj(context)
+        return ob is not None and snoot.find(ob) is None and snoot.find_handmade(ob) is None
+
+    def execute(self, context):
+        obj = snoot.add(context.object)
+        self.report({"INFO"}, "Added %s. Ctrl+Z removes it." % obj.name)
+        return {"FINISHED"}
+
+
+class TLA_OT_snoot_remove(bpy.types.Operator):
+    bl_idname = "tla.snoot_remove"
+    bl_label = "Remove Snoot"
+    bl_description = "Delete the snoot the assistant added to this light"
+    bl_options = {"REGISTER", "UNDO"}
+
+    @classmethod
+    def poll(cls, context):
+        ob = _light_obj(context)
+        return ob is not None and snoot.find(ob) is not None
+
+    def execute(self, context):
+        snoot.remove(context.object)
+        return {"FINISHED"}
+
+
+class TLA_OT_snoot_refit(bpy.types.Operator):
+    bl_idname = "tla.snoot_refit"
+    bl_label = "Refit Snoot"
+    bl_description = "Rebuild the snoot to match the light (e.g. after changing an area light's shape)"
+    bl_options = {"REGISTER", "UNDO"}
+
+    @classmethod
+    def poll(cls, context):
+        ob = _light_obj(context)
+        return ob is not None and snoot.find(ob) is not None
+
+    def execute(self, context):
+        snoot.refit(context.object)
+        return {"FINISHED"}
+
+
+class TLA_OT_snoot_convert(bpy.types.Operator):
+    bl_idname = "tla.snoot_convert"
+    bl_label = "Convert Hand-Built Snoot"
+    bl_description = ("Replace the hand-built snoot with a managed one of the same length and taper, which scales "
+                      "with the light. The original is hidden, not deleted")
+    bl_options = {"REGISTER", "UNDO"}
+
+    @classmethod
+    def poll(cls, context):
+        ob = _light_obj(context)
+        return ob is not None and snoot.find(ob) is None and snoot.find_handmade(ob) is not None
+
+    def execute(self, context):
+        try:
+            obj, m = snoot.convert_handmade(context.object)
+        except ValueError as e:
+            self.report({"ERROR"}, str(e))
+            return {"CANCELLED"}
+        self.report({"INFO"}, "Converted: length %.2f×, mouth %.2f×. The original is hidden." % (m["length"], m["mouth"]))
+        return {"FINISHED"}
+
+
+classes = (TLA_OT_suggest, TLA_OT_apply, TLA_OT_discard, TLA_OT_test_connection,
+           TLA_OT_snoot_add, TLA_OT_snoot_remove, TLA_OT_snoot_refit, TLA_OT_snoot_convert)
 
 
 def register():

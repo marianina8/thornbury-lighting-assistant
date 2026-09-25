@@ -157,8 +157,8 @@ func TestMockRules(t *testing.T) {
 	m := &Mock{}
 	o, _, _ := m.Propose(context.Background(), input("snoot the key down so it stops spilling on the background, keep it warm"))
 	r := Interpret(input(""), o)
-	if r.Proposal.SpotSize == nil || *r.Proposal.SpotSize >= math.Pi/4 {
-		t.Fatal("snoot should narrow the cone")
+	if r.Proposal.Snoot == nil || !*r.Proposal.Snoot {
+		t.Fatal("'snoot' should add the physical snoot")
 	}
 	if r.Proposal.Color != nil || r.Proposal.Temperature != nil {
 		t.Fatal("'keep it warm' must not change colour")
@@ -166,5 +166,56 @@ func TestMockRules(t *testing.T) {
 	o, _, _ = m.Propose(context.Background(), input("move the key to camera left"))
 	if *o.InScope {
 		t.Fatal("placement should be out of scope")
+	}
+}
+
+func areaInput(note string) Input {
+	return Input{Note: note, Light: lightparams.Light{Name: "Soft", Type: "AREA", Energy: 400, Color: [3]float64{1, 1, 1},
+		Size: 0.25, SizeY: 0.25, Shape: "SQUARE", Spread: math.Pi, Preset: "none"}}
+}
+
+func TestSnootMeansThePhysicalSnoot(t *testing.T) {
+	m := &Mock{}
+	for _, in := range []Input{input("snoot the key down so it stops spilling on the background"), areaInput("put a snoot on it")} {
+		o, _, _ := m.Propose(context.Background(), in)
+		r := Interpret(in, o)
+		if r.Proposal.Snoot == nil || !*r.Proposal.Snoot {
+			t.Fatalf("%s: snoot not added: %+v", in.Light.Type, r.Proposal)
+		}
+	}
+	in := input("snoot it down more")
+	in.Light.Snoot, in.Light.SnootLength, in.Light.SnootMouth = true, 1, 0.5
+	o, _, _ := m.Propose(context.Background(), in)
+	r := Interpret(in, o)
+	if r.Proposal.SnootMouth == nil || *r.Proposal.SnootMouth >= 0.5 {
+		t.Fatalf("existing snoot should tighten: %+v", r.Proposal)
+	}
+	o, _, _ = m.Propose(context.Background(), func() Input { i := in; i.Note = "lose the snoot"; return i }())
+	if r := Interpret(in, o); r.Proposal.Snoot == nil || *r.Proposal.Snoot {
+		t.Fatalf("remove: %+v", r.Proposal)
+	}
+}
+
+func TestAreaLightInterpretation(t *testing.T) {
+	in := areaInput("tighten it up, softer shadows")
+	o, _, _ := (&Mock{}).Propose(context.Background(), in)
+	r := Interpret(in, o)
+	if r.Proposal.Spread == nil || *r.Proposal.Spread >= math.Pi || r.Proposal.Size == nil || *r.Proposal.Size <= 0.25 {
+		t.Fatalf("area: %+v", r.Proposal)
+	}
+	if r.Proposal.SpotSize != nil {
+		t.Fatal("spot fields on an area light")
+	}
+	msg := UserMessage(in)
+	state := msg[:strings.Index(msg, "}")]
+	if !strings.Contains(state, `"spread_deg": 180`) || strings.Contains(state, "cone_angle_deg") || strings.Contains(msg, "Preset library") {
+		t.Fatalf("area context wrong:\n%s", msg)
+	}
+	// A model that ignores the type still can't set spot fields on an area light.
+	yes := true
+	cone := 20.0
+	r = Interpret(in, Output{InScope: &yes, ConeAngleDeg: &cone, Confidence: &cone})
+	if r.Proposal.SpotSize != nil || len(r.Adjustments) != 1 {
+		t.Fatalf("cross-type: %+v", r)
 	}
 }

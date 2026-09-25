@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Reading and writing a spot light's real data-block. Plain code, no AI.
+"""Reading and writing a spot or area light's real data-block. Plain code, no AI.
 
 Node wiring was verified against Blender 4.2.0, 4.5.14 LTS, 5.0.1, 5.1.2 and
 5.2.2 LTS (bpy wheels) on 2026-09-24, including Cycles test renders:
@@ -24,6 +24,8 @@ import warnings
 
 import bpy
 
+from . import snoot
+
 PRESET_DIR = os.path.join(os.path.dirname(__file__), "presets")
 NODE_PREFIX = "TLA "
 PRESET_KEY = "tla_preset"  # custom property on the Light: current preset id
@@ -37,6 +39,9 @@ SPOT_SIZE_MAX = math.pi
 ENERGY_MAX = 1_000_000.0
 TEMPERATURE_MIN, TEMPERATURE_MAX = 800.0, 20000.0
 RADIUS_MAX = 100.0
+AREA_SIZE_MIN, AREA_SIZE_MAX = 0.01, 100.0  # RNA: 0 - FLT_MAX (soft 100); 0 is degenerate
+SPREAD_MIN, SPREAD_MAX = math.radians(1.0), math.pi  # RNA: 0 - 180 deg
+SUPPORTED_TYPES = {"SPOT", "AREA"}
 
 
 def load_library():
@@ -104,22 +109,35 @@ def preset_state(light):
     return "custom"
 
 
-def read_state(light):
-    """The light's real current values, in the backend's schema."""
+def read_state(light, obj=None):
+    """The light's real current values, in the backend's schema. `obj` is the
+    light's object (needed for the snoot, which is a child object)."""
     state = {
         "name": light.name,
         "type": light.type,
-        "spot_size": float(getattr(light, "spot_size", 0.0)),
-        "spot_blend": float(getattr(light, "spot_blend", 0.0)),
         "energy": float(light.energy),
         "color": [float(c) for c in light.color],
-        "shadow_soft_size": float(light.shadow_soft_size),
-        "use_square": bool(getattr(light, "use_square", False)),
-        "preset": preset_state(light),
+        "preset": preset_state(light) if light.type == "SPOT" else "none",
     }
+    if light.type == "SPOT":
+        state.update({
+            "spot_size": float(light.spot_size),
+            "spot_blend": float(light.spot_blend),
+            "shadow_soft_size": float(light.shadow_soft_size),
+            "use_square": bool(light.use_square),
+        })
+    elif light.type == "AREA":
+        state.update({
+            "size": float(light.size),
+            "size_y": float(light.size_y),
+            "shape": light.shape,
+            "spread": float(light.spread),
+        })
     if has_temperature(light):
         state["use_temperature"] = bool(light.use_temperature)
         state["temperature"] = float(light.temperature)
+    if obj is not None and snoot.supported(light):
+        state.update(snoot.state(obj))
     return state
 
 
@@ -135,43 +153,64 @@ def _clamp(v, lo, hi):
 
 def sanitize(values, light):
     """Second, client-side range check (the backend already clamped). Drops
-    unknown fields and anything this Blender doesn't support."""
+    unknown fields and anything this light type or Blender doesn't support."""
     out = {}
-    if "spot_size" in values:
+    spot, area = light.type == "SPOT", light.type == "AREA"
+    if spot and "spot_size" in values:
         out["spot_size"] = _clamp(float(values["spot_size"]), SPOT_SIZE_MIN, SPOT_SIZE_MAX)
-    if "spot_blend" in values:
+    if spot and "spot_blend" in values:
         out["spot_blend"] = _clamp(float(values["spot_blend"]), 0.0, 1.0)
     if "energy" in values:
         out["energy"] = _clamp(float(values["energy"]), 0.0, ENERGY_MAX)
     if "color" in values:
         out["color"] = [_clamp(float(c), 0.0, 1.0) for c in values["color"]][:3]
-    if "shadow_soft_size" in values:
+    if spot and "shadow_soft_size" in values:
         out["shadow_soft_size"] = _clamp(float(values["shadow_soft_size"]), 0.0, RADIUS_MAX)
-    if "use_square" in values:
+    if spot and "use_square" in values:
         out["use_square"] = bool(values["use_square"])
+    if area:
+        for f in ("size", "size_y"):
+            if f in values:
+                out[f] = _clamp(float(values[f]), AREA_SIZE_MIN, AREA_SIZE_MAX)
+        if "spread" in values:
+            out["spread"] = _clamp(float(values["spread"]), SPREAD_MIN, SPREAD_MAX)
     if has_temperature(light):
         if "temperature" in values:
             out["temperature"] = _clamp(float(values["temperature"]), TEMPERATURE_MIN, TEMPERATURE_MAX)
         if "use_temperature" in values:
             out["use_temperature"] = bool(values["use_temperature"])
-    if "preset" in values and (values["preset"] == "none" or values["preset"] in LIBRARY):
+    if spot and "preset" in values and (values["preset"] == "none" or values["preset"] in LIBRARY):
         out["preset"] = values["preset"]
+    if snoot.supported(light):
+        if "snoot" in values:
+            out["snoot"] = bool(values["snoot"])
+        if "snoot_length" in values:
+            out["snoot_length"] = _clamp(float(values["snoot_length"]), *snoot.LENGTH_RANGE)
+        if "snoot_mouth" in values:
+            out["snoot_mouth"] = _clamp(float(values["snoot_mouth"]), *snoot.MOUTH_RANGE)
     return out
 
 
-SCALARS = ("spot_size", "spot_blend", "energy", "shadow_soft_size", "use_square", "temperature", "use_temperature")
+SCALARS = ("spot_size", "spot_blend", "energy", "shadow_soft_size", "use_square", "temperature", "use_temperature",
+           "size", "size_y", "spread")
 
 
-def apply_values(light, values):
+def apply_values(light, values, obj=None):
     """Write values into the light data-block, all or nothing. Call from an
     operator with the UNDO flag so a single Ctrl+Z reverts the whole suggestion.
 
     Everything that can fail (preset checks, loading the image or IES file) is
     done before the first write; if anything still fails, every value and the
     previous preset are put back before the error is raised."""
-    if light.type != "SPOT":
-        raise ValueError("Only spot lights are supported.")
+    if light.type not in SUPPORTED_TYPES:
+        raise ValueError("Only spot and area lights are supported.")
     v = sanitize(values, light)
+    snoot_change = any(k in v for k in ("snoot", "snoot_length", "snoot_mouth"))
+    if snoot_change:
+        if obj is None or obj.data != light:
+            raise ValueError("A snoot needs the light's object.")
+        if snoot.find_handmade(obj) is not None and snoot.find(obj) is None:
+            raise ValueError("This light has a hand-built snoot; convert it in the panel first.")
     before_preset = preset_state(light)
     new_preset = v.get("preset")
     if new_preset == before_preset:
@@ -185,6 +224,7 @@ def apply_values(light, values):
 
     snapshot = {f: getattr(light, f) for f in SCALARS if hasattr(light, f)}
     snapshot_color = tuple(light.color)
+    snoot_before = snoot.state(obj) if snoot_change else None
     try:
         for field in SCALARS:
             if field in v:
@@ -193,18 +233,42 @@ def apply_values(light, values):
             light.color = v["color"]
         if new_preset is not None:
             set_preset(light, new_preset)
-        elif preset_state(light) in LIBRARY:
+        elif light.type == "SPOT" and preset_state(light) in LIBRARY:
             _update_gobo_scale(light)  # keep a gobo filling the (possibly new) cone
+        if snoot_change:
+            _apply_snoot(obj, v)
     except Exception:
         for f, val in snapshot.items():
             setattr(light, f, val)
         light.color = snapshot_color
+        if snoot_change:
+            _restore_snoot(obj, snoot_before)
         try:
             set_preset(light, before_preset if before_preset in LIBRARY else "none")
         except Exception:
             pass
         raise
     return v
+
+
+def _apply_snoot(obj, v):
+    want = v.get("snoot")
+    if want is False:
+        snoot.remove(obj)
+    elif want is True or snoot.find(obj) is not None:
+        snoot.add(obj, length=v.get("snoot_length"), mouth=v.get("snoot_mouth"))
+    else:  # length/mouth without a snoot: adding one is implied
+        snoot.add(obj, length=v.get("snoot_length"), mouth=v.get("snoot_mouth"))
+
+
+def _restore_snoot(obj, before):
+    try:
+        if before.get("snoot") and "snoot_length" in before:
+            snoot.add(obj, length=before["snoot_length"], mouth=before["snoot_mouth"])
+        elif not before.get("snoot"):
+            snoot.remove(obj)
+    except Exception:
+        pass
 
 
 # ------------------------------------------------------------------- presets

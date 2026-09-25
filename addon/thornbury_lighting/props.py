@@ -22,6 +22,12 @@ FIELDS = {
     "shadow_soft_size": ("Radius (shadow softness)", "DISTANCE"),
     "use_square": ("Square cone", "BOOL"),
     "preset": ("Gobo / IES preset", "PRESET"),
+    "size": ("Size", "DISTANCE"),
+    "size_y": ("Size Y", "DISTANCE"),
+    "spread": ("Spread", "ANGLE"),
+    "snoot": ("Snoot", "BOOL"),
+    "snoot_length": ("Snoot length (x opening)", "RATIO"),
+    "snoot_mouth": ("Snoot mouth (x opening)", "FACTOR"),
 }
 
 PRESET_ITEMS = [("none", "None", "Remove the assistant's preset")] + [
@@ -43,9 +49,11 @@ class TLA_Row(bpy.types.PropertyGroup):
     v_color: FloatVectorProperty(name="Color", subtype="COLOR", size=3, min=0.0, max=1.0)
     v_bool: BoolProperty(name="On")
     v_preset: EnumProperty(name="Preset", items=PRESET_ITEMS)
+    v_ratio: FloatProperty(name="Ratio", min=0.25, max=6.0)
 
     _attr = {"ANGLE": "v_angle", "FACTOR": "v_factor", "POWER": "v_power", "DISTANCE": "v_distance",
-             "TEMP": "v_temp", "COLOR": "v_color", "BOOL": "v_bool", "PRESET": "v_preset"}
+             "TEMP": "v_temp", "COLOR": "v_color", "BOOL": "v_bool", "PRESET": "v_preset",
+             "RATIO": "v_ratio"}
 
     @property
     def attr(self):
@@ -101,6 +109,8 @@ def fill_rows(state, proposal, light):
             continue
         if field in ("temperature", "use_temperature") and not lightstate.has_temperature(light):
             continue
+        if field not in lightstate.sanitize({field: proposal[field]}, light):
+            continue  # not meaningful for this light type
         row = state.rows.add()
         row.field, row.label, row.kind = field, label, kind
         row.set(proposal[field])
@@ -109,8 +119,12 @@ def fill_rows(state, proposal, light):
 def format_value(field, value):
     if value is None:
         return "-"
-    if field == "spot_size":
+    if field in ("spot_size", "spread"):
         return "%.1f°" % math.degrees(value)
+    if field in ("snoot_length", "snoot_mouth"):
+        return "%.2f×" % value
+    if field in ("size", "size_y"):
+        return "%.3g m" % value
     if field == "energy":
         return "%.4g W" % value
     if field == "temperature":
@@ -128,6 +142,20 @@ def format_value(field, value):
     return str(value)
 
 
+def _snoot_changed(self, context):
+    from . import snoot
+    parent = self.parent
+    if parent is not None and self.get("tla_snoot") and self.name not in snoot._BUSY:
+        snoot.refit(parent)
+
+
+SNOOT_PROPS = {
+    "tla_snoot_length": FloatProperty(name="Length", description="Snoot length, in multiples of its opening",
+                                      default=1.0, min=0.25, max=6.0, update=_snoot_changed),
+    "tla_snoot_mouth": FloatProperty(name="Mouth", description="Front opening as a fraction of the back (1 = straight tube)",
+                                     default=0.5, min=0.2, max=1.0, subtype="FACTOR", update=_snoot_changed),
+}
+
 classes = (TLA_Row, TLA_State)
 
 
@@ -135,6 +163,8 @@ def register():
     for c in classes:
         bpy.utils.register_class(c)
     bpy.types.WindowManager.tla = bpy.props.PointerProperty(type=TLA_State)
+    for name, prop in SNOOT_PROPS.items():
+        setattr(bpy.types.Object, name, prop)
     # Re-enabling the addon mid-request must not leave the panel stuck on
     # "Asking…" (the old request's result can no longer arrive).
     try:
@@ -146,6 +176,8 @@ def register():
 
 
 def unregister():
+    for name in SNOOT_PROPS:
+        delattr(bpy.types.Object, name)
     del bpy.types.WindowManager.tla
     for c in reversed(classes):
         bpy.utils.unregister_class(c)

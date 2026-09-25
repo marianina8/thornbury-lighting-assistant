@@ -4,7 +4,7 @@ import textwrap
 
 import bpy
 
-from . import lightstate, ops, props
+from . import lightstate, ops, props, snoot
 
 
 def _wrapped(layout, text, width=48, icon="NONE"):
@@ -17,11 +17,12 @@ def draw_assistant(layout, context):
     p, st = ops.prefs(context), ops.state(context)
     ob = context.object
     if ob is None or ob.type != "LIGHT":
-        layout.label(text="Select a spot light.", icon="LIGHT_SPOT")
+        layout.label(text="Select a spot or area light.", icon="LIGHT_SPOT")
         return
-    if ob.data.type != "SPOT":
-        _wrapped(layout, "The assistant works on spot lights only (it adjusts the cone, blend, power, colour and radius).", icon="INFO")
+    if ob.data.type not in lightstate.SUPPORTED_TYPES:
+        _wrapped(layout, "The assistant works on spot and area lights.", icon="INFO")
         return
+    _draw_snoot(layout, context, ob)
     if not p.backend_url.strip() or not p.api_key.strip():
         box = layout.box()
         _wrapped(box, "Add the backend URL and your API key in Edit > Preferences > Add-ons > Thornbury Lighting Assistant.", icon="PREFERENCES")
@@ -64,7 +65,7 @@ def _draw_proposal(layout, context, st):
         _wrapped(box, "Select %s again to apply this proposal." % st.light_name, icon="ERROR")
 
     snapshot = json.loads(st.snapshot or "{}")
-    live = lightstate.read_state(light) if light is not None else {}
+    live = lightstate.read_state(light, context.object) if light is not None else {}
     changed_since = False
     grid = box.column(align=True)
     for r in st.rows:
@@ -97,6 +98,26 @@ def _draw_proposal(layout, context, st):
     row.scale_y = 1.2
     row.operator("tla.apply", text="Apply", icon="CHECKMARK")
     row.operator("tla.discard", text="Discard", icon="X")
+
+
+def _draw_snoot(layout, context, ob):
+    box = layout.box()
+    head = box.row()
+    head.label(text="Snoot", icon="MESH_CONE")
+    managed, handmade = snoot.find(ob), snoot.find_handmade(ob)
+    if managed is not None:
+        head.operator("tla.snoot_remove", text="", icon="X")
+        col = box.column(align=True)
+        col.prop(managed, "tla_snoot_length", slider=True)
+        col.prop(managed, "tla_snoot_mouth", slider=True)
+        if snoot.needs_refit(ob):
+            box.operator("tla.snoot_refit", icon="FILE_REFRESH", text="Refit to the new light shape")
+        box.label(text="Scales with the light's %s." % ("radius" if ob.data.type == "SPOT" else "size"), icon="DRIVER")
+    elif handmade is not None:
+        _wrapped(box, "Hand-built snoot found (%s). Convert it so it scales with the light and the assistant can adjust it." % handmade.name, icon="INFO")
+        box.operator("tla.snoot_convert", icon="MODIFIER")
+    else:
+        box.operator("tla.snoot_add", icon="ADD")
 
 
 class TLA_PT_light_properties(bpy.types.Panel):

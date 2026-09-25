@@ -16,8 +16,8 @@ sent you: a **backend URL** and an **API key** (starts with `tla_`).
 
 ## 2. Try it
 
-1. Open `thornbury_demo.blend` (or any scene with a spot light) and select the
-   spot light called **Key**.
+1. Open `thornbury_demo.blend` (or any scene with a spot or area light) and
+   select a light (**Spot** or **Area** in the demo).
 2. Find the panel either in **Properties > Light (green bulb tab) > Lighting
    Note Assistant**, or in the 3D view sidebar (**N**) under the **Thornbury** tab.
 3. Type a note, e.g. *snoot the key down so it stops spilling on the
@@ -29,7 +29,16 @@ sent you: a **backend URL** and an **API key** (starts with `tla_`).
 5. Click **Apply**, then render (F12) to see it. **Ctrl+Z** undoes the whole
    suggestion in one step. Or click **Discard**.
 
-Good notes to try: "feather the edge", "half a stop down", "softer shadows",
+**Snoots.** The panel has a **Snoot** box. **Add Snoot** puts a physical snoot
+(an open, tapered tube on spot lights, or a box on square area lights) on the
+light. It follows the light and grows or shrinks with the light's Radius (spot)
+or Size (area). Use **Length** and **Mouth** to shape it. If a light already has
+a snoot you built by hand (a mesh child named "…Snoot"), **Convert Hand-Built
+Snoot** replaces it with a managed one of the same proportions and hides the
+original. You can also just ask: *snoot the key down*, *tighter snoot*, *lose
+the snoot*.
+
+Good notes to try: "snoot it", "snoot it down more", "feather the edge", "half a stop down", "softer shadows",
 "warm it up", "break it up like light through leaves", "cut it into a slot
 like barn doors", "remove the gobo". It deliberately refuses placement or taste
 notes ("move the key left", "make it more cinematic"): it only sets the

@@ -14,7 +14,7 @@ import (
 // Defaults for this repo (the same values the Makefile passes to sam deploy).
 const (
 	DefaultStack   = "thornbury-lighting-assistant"
-	DefaultProfile = "demos-admin"
+	DefaultProfile = "" // empty: the standard chain (AWS_PROFILE, SSO, env vars)
 	DefaultRegion  = "us-west-2"
 )
 

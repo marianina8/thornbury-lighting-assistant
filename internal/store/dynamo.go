@@ -40,7 +40,9 @@ func keyPK(hash string) map[string]types.AttributeValue {
 }
 
 func s(v string) types.AttributeValue { return &types.AttributeValueMemberS{Value: v} }
-func n(v int64) types.AttributeValue  { return &types.AttributeValueMemberN{Value: strconv.FormatInt(v, 10)} }
+func n(v int64) types.AttributeValue {
+	return &types.AttributeValueMemberN{Value: strconv.FormatInt(v, 10)}
+}
 
 var trueAV = &types.AttributeValueMemberBOOL{Value: true}
 

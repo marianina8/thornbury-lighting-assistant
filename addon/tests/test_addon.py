@@ -717,6 +717,33 @@ class AddonTests(unittest.TestCase):
         finally:
             bpy.context.preferences.system.use_online_access = True
 
+    def test_client_version_matches_manifest(self):
+        self.assertEqual(ops.CLIENT_VERSION, _manifest_version())
+
+    def test_preferences_draw_and_self_host_link(self):
+        """The prefs panel draws, and says the backend is optional with a link to the self-host guide."""
+        seen = {"labels": [], "ops": []}
+
+        class Fake:
+            def __getattr__(self, name):
+                def call(*a, **kw):
+                    if name == "label":
+                        seen["labels"].append(kw.get("text", ""))
+                    if name == "operator":
+                        seen["ops"].append(a[0])
+                        return type("Op", (), {})()
+                    return Fake()
+                return call
+
+        ui = importlib.import_module(PKG + ".ui")
+        prefs = ops.prefs()
+        type(prefs).draw(type("S", (), {"layout": Fake(), **{k: getattr(prefs, k) for k in
+                                         ("backend_url", "api_key", "timeout", "connection_status")}})(), bpy.context)
+        self.assertIn("wm.url_open", seen["ops"])
+        self.assertTrue(hasattr(bpy.ops.wm, "url_open"))
+        self.assertTrue(ui.SELF_HOST_URL.endswith("docs/self-host.md"))
+        self.assertTrue(any("work without" in t for t in seen["labels"]))
+
     # ---------------------------------------------------------------- e2e
     @unittest.skipUnless(BACKEND and KEY, "set TLA_BACKEND and TLA_KEY (cmd/local) for the end-to-end test")
     def test_end_to_end_against_backend(self):

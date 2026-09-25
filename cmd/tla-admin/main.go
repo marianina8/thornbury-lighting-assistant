@@ -30,7 +30,7 @@ import (
 
 func usage() {
 	fmt.Fprintln(os.Stderr, `usage: tla-admin <keys|revoke|set-limit|audit|pause|resume|status> [flags]
-common flags: --stack thornbury-lighting-assistant --profile demos-admin --region us-west-2`)
+common flags: --stack thornbury-lighting-assistant --profile <aws profile> --region us-west-2`)
 	os.Exit(2)
 }
 

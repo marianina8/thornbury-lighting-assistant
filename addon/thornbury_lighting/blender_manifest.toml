@@ -1,10 +1,11 @@
 schema_version = "1.0.0"
 
 id = "thornbury_lighting"
-version = "0.3.0"
+version = "0.3.1"
 name = "Thornbury Lighting Assistant"
 tagline = "Lighting notes to spot/area settings and snoots you approve"
 maintainer = "Marian Montagnino"
+website = "https://github.com/marianina8/thornbury-lighting-assistant"
 type = "add-on"
 
 blender_version_min = "4.2.0"
@@ -15,7 +16,7 @@ copyright = ["2026 Marian Montagnino"]
 tags = ["Lighting"]
 
 [permissions]
-network = "Sends your note and light settings to the assistant backend"
+network = "Optional: sends notes and light settings to your backend"
 files = "Loads bundled gobo images and IES profiles"
 
 [build]

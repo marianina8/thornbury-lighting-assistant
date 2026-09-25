@@ -50,15 +50,29 @@ def load_library():
 
 
 LIBRARY = load_library()
-USER_PREFIX = "user:"  # a gobo from the artist's own image: "user:<image name>"
-USER_TAG = "tla_user_gobo"
+USER_PREFIX = "user:"  # a gobo from the artist's own image: "user:<token>"
+USER_TAG = "tla_user_gobo"  # on the image: its stable token (survives renames)
+USER_NUM = "tla_user_num"   # on the image: its stable number in the picker
 
 
 def user_gobo_image(pid):
     if not pid.startswith(USER_PREFIX):
         return None
-    img = bpy.data.images.get(pid[len(USER_PREFIX):])
-    return img if img is not None and img.get(USER_TAG) else None
+    token = pid[len(USER_PREFIX):]
+    for img in bpy.data.images:
+        if img.get(USER_TAG) == token:
+            return img
+    return None
+
+
+def user_gobo_id(img):
+    """Tag an image as a user gobo (once) and return its preset id."""
+    import uuid
+    if not isinstance(img.get(USER_TAG), str):
+        img[USER_TAG] = uuid.uuid4().hex[:10]
+        used = [i.get(USER_NUM, 0) for i in bpy.data.images if i.get(USER_TAG)]
+        img[USER_NUM] = max([999] + used) + 1
+    return USER_PREFIX + img[USER_TAG]
 
 
 def resolve(pid):
@@ -122,10 +136,21 @@ def preset_state(light):
         return "none"
     if _is_our_tree(nt):
         pid = light.get(PRESET_KEY, "")
-        return pid if resolve(pid) is not None else "custom"
+        # Our tree whose gobo image was deleted: still ours, just replaceable.
+        return pid if resolve(pid) is not None else "broken"
     if _is_default_tree(nt) or len(nt.nodes) == 0:
         return "none"
     return "custom"
+
+
+def _preset_for_backend(light):
+    """User gobos go to the backend as just "user": no filenames in prompts."""
+    if light.type != "SPOT":
+        return "none"
+    pid = preset_state(light)
+    if pid.startswith(USER_PREFIX):
+        return "user"
+    return "none" if pid == "broken" else pid
 
 
 def read_state(light, obj=None):
@@ -136,7 +161,7 @@ def read_state(light, obj=None):
         "type": light.type,
         "energy": float(light.energy),
         "color": [float(c) for c in light.color],
-        "preset": preset_state(light) if light.type == "SPOT" else "none",
+        "preset": _preset_for_backend(light),
     }
     if light.type == "SPOT":
         state.update({
@@ -464,14 +489,19 @@ def update_gobo_transform(light):
 
 def gobo_transform_changed(light):
     """Property update: files from 0.1/0.2 have no transform node, so rebuild
-    their gobo once (same pattern) to add it."""
+    their gobo once (same pattern, keeping the image node's settings)."""
     if light.type != "SPOT":
         return
     if not update_gobo_transform(light):
         pid = preset_state(light)
         pre = resolve(pid)
         if pre is not None and pre["kind"] == "gobo":
+            old = light.node_tree.nodes.get(NODE_PREFIX + "Gobo Image")
+            keep = (old.extension, old.interpolation) if old is not None else None
             set_preset(light, pid)
+            new = light.node_tree.nodes.get(NODE_PREFIX + "Gobo Image")
+            if keep and new is not None:
+                new.extension, new.interpolation = keep
 
 
 def _ies_text(preset):

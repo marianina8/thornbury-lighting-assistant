@@ -235,6 +235,9 @@ func UserMessage(in Input) string {
 		if l.Preset == "custom" {
 			b.WriteString("This light has a hand-built node tree, so do not propose a preset.\n")
 		}
+		if l.Preset == "user" {
+			b.WriteString("The current preset \"user\" is the artist's own gobo image; only replace it if the note asks for a different pattern.\n")
+		}
 		fmt.Fprintf(&b, "\nPreset library (id, kind, what it does):\n%s- none: remove the current preset\n", presets.PromptList())
 	}
 	if l.SnootCustom {

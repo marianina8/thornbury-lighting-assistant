@@ -17,7 +17,13 @@ import bpy
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(os.path.dirname(HERE))
-ZIP = os.environ.get("TLA_ZIP") or os.path.join(ROOT, "dist", "thornbury_lighting-0.2.0.zip")
+def _manifest_version():
+    import re as _re
+    with open(os.path.join(ROOT, "addon", "thornbury_lighting", "blender_manifest.toml"), encoding="utf-8") as fh:
+        return _re.search(r'^version = "([^"]+)"', fh.read(), _re.M).group(1)
+
+
+ZIP = os.environ.get("TLA_ZIP") or os.path.join(ROOT, "dist", "thornbury_lighting-%s.zip" % _manifest_version())
 BACKEND = os.environ.get("TLA_BACKEND", "")
 KEY = os.environ.get("TLA_KEY", "")
 PKG = "bl_ext.user_default.thornbury_lighting"
@@ -606,23 +612,86 @@ class AddonTests(unittest.TestCase):
         self.assertIn("TLA Gobo Transform", nt.nodes)
         self.assertEqual(lightstate.preset_state(self.light), "gobo_slot")
 
-    def test_add_your_own_gobo_image(self):
+    def _png(self, name, w=32):
         import tempfile
-        img = bpy.data.images.new("my_cookie", 32, 32)
-        path = os.path.join(tempfile.mkdtemp(), "my_cookie.png")
+        img = bpy.data.images.new(name, w, w)
+        path = os.path.join(tempfile.mkdtemp(), name + ".png")
         img.filepath_raw, img.file_format = path, "PNG"
         img.save()
         bpy.data.images.remove(img)
+        return path
+
+    def test_add_your_own_gobo_image(self):
+        path = self._png("my_cookie")
         self.assertEqual(bpy.ops.tla.gobo_add_image(filepath=path), {"FINISHED"})
-        state = lightstate.read_state(self.light, self.ob)
-        self.assertTrue(state["preset"].startswith("user:"))
-        user = bpy.data.images[state["preset"][5:]]
+        pid = lightstate.preset_state(self.light)
+        self.assertTrue(pid.startswith("user:"))
+        user = lightstate.user_gobo_image(pid)
         self.assertIsNotNone(user.packed_file)
-        self.assertIn(state["preset"], [i[0] for i in gallery.gobo_items(None, bpy.context)])
+        self.assertIn(pid, [i[0] for i in gallery.gobo_items(None, bpy.context)])
         self.assertEqual(self.light.node_tree.nodes["TLA Gobo Image"].image, user)
-        # The assistant can still swap it for a library preset.
-        lightstate.apply_values(self.light, {"preset": "gobo_stars"}, self.ob)
+        self.assertEqual(lightstate.read_state(self.light, self.ob)["preset"], "user")  # no filenames to the backend
+        lightstate.apply_values(self.light, {"preset": "gobo_stars"}, self.ob)  # the assistant can swap it
         self.assertEqual(lightstate.preset_state(self.light), "gobo_stars")
+
+    def test_renaming_or_deleting_a_user_gobo_never_locks_the_light(self):
+        """Review: a renamed/deleted user image used to make the light 'custom' for good."""
+        bpy.ops.tla.gobo_add_image(filepath=self._png("bbb"))
+        pid = lightstate.preset_state(self.light)
+        img = lightstate.user_gobo_image(pid)
+        img.name = "renamed"
+        self.assertEqual(lightstate.preset_state(self.light), pid)  # identity survives a rename
+        bpy.data.images.remove(img)
+        self.assertEqual(lightstate.preset_state(self.light), "broken")
+        self.assertTrue(gallery.TLA_OT_gobo_use.poll(bpy.context))
+        self.assertEqual(lightstate.read_state(self.light, self.ob)["preset"], "none")
+        bpy.context.window_manager.tla_pick_gobo = "gobo_ring"
+        bpy.ops.tla.gobo_use(kind="gobo")
+        self.assertEqual(lightstate.preset_state(self.light), "gobo_ring")
+
+    def test_picker_numbers_are_stable_and_stale_picks_are_refused(self):
+        bpy.ops.tla.gobo_add_image(filepath=self._png("aaa"))
+        bpy.ops.tla.gobo_add_image(filepath=self._png("bbb"))
+        wm = bpy.context.window_manager
+        b = lightstate.preset_state(self.light)
+        wm.tla_pick_gobo = b
+        a_img = next(i for i in bpy.data.images if i.name.startswith("aaa"))
+        bpy.data.images.remove(a_img)
+        self.assertEqual(wm.tla_pick_gobo, b)  # still the same image, not a neighbour
+        bpy.data.images.remove(lightstate.user_gobo_image(b))
+        self.assertEqual(bpy.ops.tla.gobo_use.poll(), True)
+        with self.assertRaises(RuntimeError):  # refused with a message, no silent no-op
+            bpy.ops.tla.gobo_use(kind="gobo")
+
+    def test_add_your_own_never_takes_over_an_existing_image(self):
+        path = self._png("wall_tex")
+        existing = bpy.data.images.load(path)
+        bpy.ops.tla.gobo_add_image(filepath=path)
+        self.assertNotIn(lightstate.USER_TAG, existing)
+        self.assertIsNone(existing.packed_file)
+        self.assertIsNot(self.light.node_tree.nodes["TLA Gobo Image"].image, existing)
+
+    def test_long_image_names_still_work_with_the_backend(self):
+        bpy.ops.tla.gobo_add_image(filepath=self._png("x" * 60))
+        state = lightstate.read_state(self.light, self.ob)
+        self.assertEqual(state["preset"], "user")
+        self.assertLessEqual(len(lightstate.preset_state(self.light)), 20)
+
+    def test_gobo_transform_is_not_animatable(self):
+        """Update callbacks don't run for F-curves, so keyframes would silently do nothing."""
+        for name in ("tla_gobo_rotation", "tla_gobo_size", "tla_gobo_offset"):
+            self.assertFalse(bpy.types.Light.bl_rna.properties[name].is_animatable, name)
+
+    def test_upgrading_an_old_gobo_keeps_image_settings(self):
+        lightstate.apply_values(self.light, {"preset": "gobo_slot"}, self.ob)
+        nt = self.light.node_tree
+        for n in ("TLA Gobo Transform", "TLA Gobo Center"):
+            nt.nodes.remove(nt.nodes[n])
+        nt.links.new(nt.nodes["TLA Gobo UV"].outputs[0], nt.nodes["TLA Gobo Image"].inputs[0])
+        nt.nodes["TLA Gobo Image"].interpolation = "Closest"
+        self.light.tla_gobo_size = 1.5
+        self.assertIn("TLA Gobo Transform", nt.nodes)
+        self.assertEqual(nt.nodes["TLA Gobo Image"].interpolation, "Closest")
 
     # ---------------------------------------------------------------- e2e
     @unittest.skipUnless(BACKEND and KEY, "set TLA_BACKEND and TLA_KEY (cmd/local) for the end-to-end test")

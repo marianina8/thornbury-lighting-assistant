@@ -34,21 +34,22 @@ def _icon(pid):
 
 
 def _user_images():
-    return [img for img in bpy.data.images if img.get(lightstate.USER_TAG)]
+    return [img for img in bpy.data.images if isinstance(img.get(lightstate.USER_TAG), str)]
 
 
 def gobo_items(self, context):
     items = [("none", "No gobo", "Remove the gobo", _icon("none"), 0)]
     for i, p in enumerate(p for p in lightstate.LIBRARY.values() if p["kind"] == "gobo"):
         items.append((p["id"], p["label"], "%s: %s" % (p.get("family", "Gobo"), p["use_when"]), _icon(p["id"]), i + 1))
-    for j, img in enumerate(_user_images()):
+    for img in _user_images():
         icon = 0
         try:
             img.preview_ensure()
             icon = img.preview.icon_id
         except Exception:
             pass
-        items.append((lightstate.USER_PREFIX + img.name, img.name, "Your own gobo image", icon, 1000 + j))
+        # A stable number per image, so a stored pick never shifts to another image.
+        items.append((lightstate.user_gobo_id(img), img.name, "Your own gobo image", icon, int(img[lightstate.USER_NUM])))
     _items["gobo"] = items
     return items
 
@@ -67,12 +68,12 @@ def _transform_changed(self, context):
 
 LIGHT_PROPS = {
     "tla_gobo_rotation": FloatProperty(name="Rotate", subtype="ANGLE", default=0.0, soft_min=-3.14159, soft_max=3.14159,
-                                       description="Turn the gobo pattern about the beam", update=_transform_changed),
+                                       description="Turn the gobo pattern about the beam", update=_transform_changed, options=set()),
     "tla_gobo_size": FloatProperty(name="Size", default=1.0, min=0.1, max=10.0, soft_max=4.0,
-                                   description="Pattern size (2 = twice as big)", update=_transform_changed),
+                                   description="Pattern size (2 = twice as big)", update=_transform_changed, options=set()),
     "tla_gobo_offset": FloatVectorProperty(name="Offset", size=2, default=(0.0, 0.0), soft_min=-1.0, soft_max=1.0,
                                            subtype="XYZ", description="Slide the pattern within the beam",
-                                           update=_transform_changed),
+                                           update=_transform_changed, options=set()),
 }
 
 
@@ -99,6 +100,9 @@ class TLA_OT_gobo_use(bpy.types.Operator):
     def execute(self, context):
         wm, ob = context.window_manager, context.object
         pid = wm.tla_pick_gobo if self.kind == "gobo" else wm.tla_pick_ies
+        if pid != "none" and lightstate.resolve(pid) is None:
+            self.report({"ERROR"}, "That gobo is no longer in this file; pick another.")
+            return {"CANCELLED"}
         try:
             lightstate.apply_values(ob.data, {"preset": pid}, ob)
         except Exception as e:
@@ -126,18 +130,18 @@ class TLA_OT_gobo_add_image(bpy.types.Operator, ImportHelper):
 
     def execute(self, context):
         try:
-            img = bpy.data.images.load(self.filepath, check_existing=True)
+            # Always a fresh datablock: never take over an image a material already uses.
+            img = bpy.data.images.load(self.filepath, check_existing=False)
         except RuntimeError as e:
             self.report({"ERROR"}, "Couldn't load that image: %s" % e)
             return {"CANCELLED"}
-        img[lightstate.USER_TAG] = True
-        if img.packed_file is None:
-            img.pack()  # keep the .blend self-contained
-        pid = lightstate.USER_PREFIX + img.name
+        pid = lightstate.user_gobo_id(img)
+        img.pack()  # keep the .blend self-contained
         ob = context.object
         try:
             lightstate.apply_values(ob.data, {"preset": pid}, ob)
         except Exception as e:
+            bpy.data.images.remove(img)
             self.report({"ERROR"}, "Not applied: %s" % e)
             return {"CANCELLED"}
         context.window_manager.tla_pick_gobo = pid
@@ -158,6 +162,8 @@ def draw(layout, context, ob):
     row = box.row(align=True)
     row.operator("tla.gobo_use", text="Use this gobo", icon="CHECKMARK").kind = "gobo"
     row.operator("tla.gobo_add_image", text="Add your own…", icon="FILE_IMAGE")
+    if current == "broken":
+        box.label(text="This light's gobo image was deleted; pick a new one.", icon="ERROR")
     pre = lightstate.resolve(current)
     if pre is not None and pre["kind"] == "gobo":
         box.label(text="On this light: %s" % pre["label"], icon="LIGHT_SPOT")

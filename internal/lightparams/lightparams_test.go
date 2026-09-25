@@ -317,3 +317,19 @@ func TestSizeYOnlyForRectangleAndEllipse(t *testing.T) {
 		t.Fatalf("ellipse: %+v", out)
 	}
 }
+
+func TestUserGoboIsReplaceableNotCustom(t *testing.T) {
+	cur := base()
+	cur.Preset = "user"
+	if err := ValidateCurrent(cur); err != nil {
+		t.Fatal(err)
+	}
+	out, _ := Clamp(cur, Capabilities{}, Proposal{Preset: sp("gobo_window_blinds")}, lib)
+	if out.Preset == nil || *out.Preset != "gobo_window_blinds" {
+		t.Fatalf("user gobo should be replaceable: %+v", out)
+	}
+	out, _ = Clamp(cur, Capabilities{}, Proposal{Preset: sp("user")}, lib)
+	if out.Preset != nil {
+		t.Fatal("the model can't invent a user gobo")
+	}
+}

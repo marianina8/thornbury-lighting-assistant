@@ -127,7 +127,7 @@ go mod tidy && make test                       # fills go.sum test-only entries,
 
 make sam-deploy                                # stack thornbury-lighting-assistant, us-west-2
 make issue-key LABEL=boyfriend-tester LIMIT=50 # prints the backend URL + key ONCE
-make addon-zip                                 # dist/thornbury_lighting-0.1.0.zip
+make addon-zip                                 # dist/thornbury_lighting-0.2.0.zip
 
 # Optional
 make billing-alarm EMAIL=you@example.com       # us-east-1; enable "Receive CloudWatch billing alerts" first

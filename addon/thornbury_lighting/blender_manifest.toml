@@ -1,9 +1,9 @@
 schema_version = "1.0.0"
 
 id = "thornbury_lighting"
-version = "0.1.0"
+version = "0.2.0"
 name = "Thornbury Lighting Assistant"
-tagline = "Turn a lighting note into spot light settings you approve"
+tagline = "Lighting notes to spot/area settings and snoots you approve"
 maintainer = "Marian Montagnino"
 type = "add-on"
 

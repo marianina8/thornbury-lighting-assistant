@@ -17,7 +17,7 @@ import bpy
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(os.path.dirname(HERE))
-ZIP = os.environ.get("TLA_ZIP") or os.path.join(ROOT, "dist", "thornbury_lighting-0.1.0.zip")
+ZIP = os.environ.get("TLA_ZIP") or os.path.join(ROOT, "dist", "thornbury_lighting-0.2.0.zip")
 BACKEND = os.environ.get("TLA_BACKEND", "")
 KEY = os.environ.get("TLA_KEY", "")
 PKG = "bl_ext.user_default.thornbury_lighting"

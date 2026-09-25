@@ -5,7 +5,7 @@ sent you: a **backend URL** and an **API key** (starts with `tla_`).
 
 ## 1. Install (about 2 minutes)
 
-1. Download `thornbury_lighting-0.1.0.zip`. Don't unzip it.
+1. Download `thornbury_lighting-0.2.0.zip`. Don't unzip it.
 2. In Blender: **Edit > Preferences > Get Extensions** (or **Add-ons**), open the
    **⌄** menu at the top right, choose **Install from Disk…**, and pick the zip.
 3. Still in Preferences, open **System > Network** and make sure

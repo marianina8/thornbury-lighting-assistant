@@ -693,6 +693,25 @@ class AddonTests(unittest.TestCase):
         self.assertIn("TLA Gobo Transform", nt.nodes)
         self.assertEqual(nt.nodes["TLA Gobo Image"].interpolation, "Closest")
 
+    def test_snoots_and_gobos_need_no_key_url_or_internet(self):
+        """Only the notes assistant needs the backend; everything else is local."""
+        p = ops.prefs()
+        p.backend_url, p.api_key = "", ""
+        bpy.context.preferences.system.use_online_access = False
+        try:
+            self.assertEqual(bpy.ops.tla.snoot_add(), {"FINISHED"})
+            bpy.context.window_manager.tla_pick_gobo = "gobo_leaf_breakup"
+            self.assertEqual(bpy.ops.tla.gobo_use(kind="gobo"), {"FINISHED"})
+            self.light.tla_gobo_rotation = 0.5
+            bpy.context.window_manager.tla_pick_ies = "ies_wide_flood"
+            self.assertEqual(bpy.ops.tla.gobo_use(kind="ies"), {"FINISHED"})
+            self.assertEqual(bpy.ops.tla.snoot_remove(), {"FINISHED"})
+            L, ob = self._area()
+            bpy.context.view_layer.objects.active = ob
+            self.assertEqual(bpy.ops.tla.snoot_add(), {"FINISHED"})
+        finally:
+            bpy.context.preferences.system.use_online_access = True
+
     # ---------------------------------------------------------------- e2e
     @unittest.skipUnless(BACKEND and KEY, "set TLA_BACKEND and TLA_KEY (cmd/local) for the end-to-end test")
     def test_end_to_end_against_backend(self):

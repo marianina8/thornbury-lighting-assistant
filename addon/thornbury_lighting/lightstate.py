@@ -11,7 +11,8 @@ Node wiring was verified against Blender 4.2.0, 4.5.14 LTS, 5.0.1, 5.1.2 and
   Emission Color (multiplies the light's own colour).
 * IES: IES Texture output -> Emission Strength. The output socket was renamed
   "Fac" (4.x) -> "Factor" (5.0+), so it is always linked by index, never name.
-* Light node trees only render in Cycles (EEVEE ignores them).
+* Light node trees only render in Cycles (EEVEE ignores them), so every gobo
+  also gets a physical card for EEVEE and Material Preview (gobocard.py).
 
 The addon only ever edits a node tree that is Blender's default or one it built
 itself; a hand-built tree is reported as "custom" and never touched.
@@ -24,7 +25,7 @@ import warnings
 
 import bpy
 
-from . import snoot
+from . import gobocard, snoot
 
 PRESET_DIR = os.path.join(os.path.dirname(__file__), "presets")
 NODE_PREFIX = "TLA "
@@ -377,6 +378,7 @@ def set_preset(light, preset_id):
             del light[PREV_NODES_KEY]
         if PRESET_KEY in light:
             del light[PRESET_KEY]
+        sync_card(light)
         return
     preset = resolve(preset_id)
     if preset is None:
@@ -394,6 +396,16 @@ def set_preset(light, preset_id):
     else:
         _build_ies(light, em, preset)
     light[PRESET_KEY] = preset_id
+    sync_card(light)
+
+
+def sync_card(light):
+    """Give every object using this spot light a gobo card when it has a gobo
+    (so EEVEE shows it too), and take the cards away when it doesn't."""
+    if light.type != "SPOT":
+        return
+    pre = resolve(preset_state(light))
+    gobocard.sync(light, _image(pre) if pre is not None and pre["kind"] == "gobo" else None)
 
 
 def _node(nt, idname, name, loc):
@@ -484,6 +496,7 @@ def update_gobo_transform(light):
     xf.inputs["Scale"].default_value = (1.0 / size, 1.0 / size, 1.0)
     xf.inputs["Rotation"].default_value = (0.0, 0.0, -float(getattr(light, "tla_gobo_rotation", 0.0)))
     xf.inputs["Location"].default_value = (-float(off[0]), -float(off[1]), 0.0)
+    gobocard.update_transform(light)
     return True
 
 

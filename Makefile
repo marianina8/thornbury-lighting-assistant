@@ -60,7 +60,7 @@ addon-test: addon-zip
 	done
 
 render-check:
-	@for py in $(BLENDER_PYS); do echo "== $$py"; $$py tools/render_presets.py && $$py tools/render_snoots.py || exit 1; done
+	@for py in $(BLENDER_PYS); do echo "== $$py"; $$py tools/render_presets.py && $$py tools/render_snoots.py && BLENDER_USER_RESOURCES=$$(mktemp -d) $$py tools/render_gobo_engines.py || exit 1; done
 
 presets:
 	python3 tools/gen_presets.py

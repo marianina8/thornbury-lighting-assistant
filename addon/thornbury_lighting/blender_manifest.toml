@@ -1,7 +1,7 @@
 schema_version = "1.0.0"
 
 id = "thornbury_lighting"
-version = "0.3.2"
+version = "0.4.0"
 name = "Thornbury Lighting Assistant"
 tagline = "Lighting notes to spot/area settings and snoots you approve"
 maintainer = "Marian Montagnino"

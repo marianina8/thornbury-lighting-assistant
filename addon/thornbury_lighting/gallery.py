@@ -15,7 +15,7 @@ import bpy.utils.previews
 from bpy.props import EnumProperty, FloatProperty, FloatVectorProperty, StringProperty
 from bpy_extras.io_utils import ImportHelper
 
-from . import lightstate, snoot
+from . import gobocard, lightstate, snoot
 
 THUMB_DIR = os.path.join(lightstate.PRESET_DIR, "thumbs")
 _previews = None
@@ -177,32 +177,40 @@ class TLA_OT_make_light_unique(bpy.types.Operator):
         ob = context.object
         old = ob.data
         ob.data = old.copy()
+        if gobocard.MAT_KEY in ob.data:
+            del ob.data[gobocard.MAT_KEY]  # its own card material, not the shared one
         s = snoot.find(ob)
         if s is not None:
             snoot._drive(s, ob.data)  # the snoot follows this light's size, not the shared one
+        card = gobocard.find(ob)
+        if card is not None:
+            gobocard.remove(ob)
+        lightstate.sync_card(ob.data)
         self.report({"INFO"}, "%s now has its own settings." % ob.name)
         return {"FINISHED"}
 
 
 def _viewport_shows_gobos(context):
-    """Gobos are light node trees, which only Cycles renders. Material Preview
-    and Solid never show them, and neither does EEVEE."""
-    if context.scene.render.engine != "CYCLES":
-        return False
+    """Cycles shows gobos in Rendered view (the light's own texture); EEVEE
+    shows them in Material Preview and Rendered (the gobo card). Solid never does."""
     areas = [a for a in context.screen.areas if a.type == "VIEW_3D"] if context.screen else []
-    return any(a.spaces.active.shading.type == "RENDERED" for a in areas)
+    modes = {a.spaces.active.shading.type for a in areas}
+    if context.scene.render.engine == "CYCLES":
+        return "RENDERED" in modes
+    return bool(modes & {"MATERIAL", "RENDERED"})
 
 
 class TLA_OT_preview_gobos(bpy.types.Operator):
     bl_idname = "tla.preview_gobos"
     bl_label = "Show Gobos in the Viewport"
-    bl_description = "Switch the render engine to Cycles and the 3D view to Rendered shading, so gobos are visible"
+    bl_description = "Switch the 3D view to Rendered shading (and Workbench to Cycles) so gobos are visible"
     bl_options = {"REGISTER", "UNDO"}
 
     def execute(self, context):
-        context.scene.render.engine = "CYCLES"
+        if context.scene.render.engine not in {"CYCLES"} and "EEVEE" not in context.scene.render.engine:
+            context.scene.render.engine = "CYCLES"  # Workbench can't show gobos at all
         for a in (context.screen.areas if context.screen else []):
-            if a.type == "VIEW_3D":
+            if a.type == "VIEW_3D" and a.spaces.active.shading.type not in {"MATERIAL", "RENDERED"}:
                 a.spaces.active.shading.type = "RENDERED"
         return {"FINISHED"}
 
@@ -269,10 +277,18 @@ def draw(layout, context, ob):
     box2.template_icon_view(light, "tla_ies_choice", show_labels=True, scale=4.0, scale_popup=4.0)
     if pre is not None and pre["kind"] == "ies":
         box2.label(text="On %s: %s" % (ob.name, pre["label"]), icon="LIGHT_SPOT")
-    if not _viewport_shows_gobos(context):
+        if context.scene.render.engine != "CYCLES":
+            box2.label(text="Beam profiles only render in Cycles.", icon="INFO")
+    if pre is not None and pre["kind"] == "gobo":
+        eevee = "EEVEE" in context.scene.render.engine
+        _note = ("EEVEE: shown through a gobo card in front of the lamp. A smaller Radius gives a crisper pattern."
+                 if eevee else "Cycles: shown by the light itself. In EEVEE a gobo card takes over automatically.")
+        box.label(text=_note[:_note.index(".") + 1], icon="INFO")
+        box.label(text=_note[_note.index(".") + 2:], icon="BLANK1")
+    if current != "none" and not _viewport_shows_gobos(context):
         tip = layout.box()
-        tip.label(text="Gobos only show in Cycles, Rendered view.", icon="INFO")
-        tip.label(text="Material Preview, Solid and EEVEE can't display them.", icon="BLANK1")
+        tip.label(text="The viewport isn't showing gobos right now.", icon="INFO")
+        tip.label(text="Use Rendered view (Cycles or EEVEE) or Material Preview (EEVEE).", icon="BLANK1")
         tip.operator("tla.preview_gobos", icon="SHADING_RENDERED")
 
 

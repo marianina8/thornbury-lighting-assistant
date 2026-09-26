@@ -96,8 +96,8 @@ def _draw_proposal(layout, context, st):
             _wrapped(adj, line, width=52, icon="DOT")
     if changed_since:
         _wrapped(box, "This light changed after you asked. Apply writes the proposed values shown.", icon="ERROR")
-    if any(r.field == "preset" and r.include and r.v_preset != "none" for r in st.rows) and context.scene.render.engine != "CYCLES":
-        _wrapped(box, "Gobo/IES presets only render in Cycles.", icon="INFO")
+    if any(r.field == "preset" and r.include and r.v_preset.startswith("ies_") for r in st.rows) and context.scene.render.engine != "CYCLES":
+        _wrapped(box, "Beam profiles (IES) only render in Cycles.", icon="INFO")
 
     row = box.row(align=True)
     row.scale_y = 1.2

@@ -8,7 +8,7 @@ backend with [docs/self-host.md](self-host.md).
 
 ## 1. Install (about 2 minutes)
 
-1. Download `thornbury_lighting-0.3.2.zip`. Don't unzip it.
+1. Download `thornbury_lighting-0.4.0.zip`. Don't unzip it.
 2. In Blender: **Edit > Preferences > Get Extensions** (or **Add-ons**), open the
    **⌄** menu at the top right, choose **Install from Disk…**, and pick the zip.
 3. Still in Preferences, open **System > Network** and make sure
@@ -58,13 +58,16 @@ like barn doors", "remove the gobo". It deliberately refuses placement or taste
 notes ("move the key left", "make it more cinematic"): it only sets the
 light's own controls.
 
-**To see a gobo you need Cycles and Rendered view.** Gobos are textures on
-the light, and only Cycles draws those: Material Preview, Solid and EEVEE
-show nothing. If you're not there yet, the panel shows a **Show Gobos in the
-Viewport** button that switches the engine to Cycles and the 3D view to
-Rendered. If lights were made with Alt+D they share their settings, so a gobo
-lands on all of them; the panel warns you and offers **Make This Light
-Separate**.
+**Seeing gobos.** They work in both engines. In **Cycles** they show in
+Rendered view. In **EEVEE** they show in Material Preview and Rendered view,
+through a thin "gobo card" the plugin puts just in front of the lamp (it's
+hidden from the camera; you'll see it as a wire square in Solid view). A
+smaller light **Radius** gives a crisper pattern in EEVEE. Solid view never
+shows light. If the viewport can't show your gobo, the panel says so and
+offers **Show Gobos in the Viewport**. Beam profiles (IES) are Cycles-only.
+
+If lights were made with Alt+D they share their settings, so a gobo lands on
+all of them; the panel warns you and offers **Make This Light Separate**.
 
 ## 3. What gets sent
 

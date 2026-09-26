@@ -616,6 +616,77 @@ class AddonTests(unittest.TestCase):
         target = s.animation_data.drivers[0].driver.variables[0].targets[0].id
         self.assertIs(target, self.ob.data)  # the snoot follows the separated light
 
+    def _card_engine(self, engine):
+        gobocard = importlib.import_module(PKG + ".gobocard")
+        bpy.context.scene.render.engine = engine
+        gobocard.sync_engine()
+        return gobocard
+
+    def test_gobo_card_follows_the_gobo_for_eevee(self):
+        """EEVEE can't read light textures, so a gobo also gets a see-through card in front of the lamp."""
+        gobocard = importlib.import_module(PKG + ".gobocard")
+        self.light.tla_gobo_choice = "gobo_window_blinds"
+        card = gobocard.find(self.ob)
+        self.assertIsNotNone(card)
+        self.assertIs(card.parent, self.ob)
+        self.assertLess(card.location.z, 0)  # in front of the lamp (lights shine down -Z)
+        self.assertFalse(card.visible_camera)
+        mat = card.material_slots[0].material
+        self.assertEqual(mat.node_tree.nodes["Gobo Image"].image.name, "TLA gobo_window_blinds")
+        self.assertTrue(getattr(mat, "use_transparent_shadow", True))
+        # it fills the cone: half-width = distance * tan(half angle), via a simple (no-autorun) driver
+        drv = card.animation_data.drivers[0].driver
+        self.assertTrue(drv.is_simple_expression, drv.expression)
+        # swapping the gobo swaps the card's image; the transform sliders move it too
+        self.light.tla_gobo_choice = "gobo_dots"
+        self.assertEqual(mat.node_tree.nodes["Gobo Image"].image.name, "TLA gobo_dots")
+        self.light.tla_gobo_rotation = math.radians(90)
+        self.assertAlmostEqual(mat.node_tree.nodes["Gobo Transform"].inputs["Rotation"].default_value[2],
+                               -math.radians(90), places=5)
+        # a profile or no gobo takes the card away
+        self.light.tla_ies_choice = "ies_medium_soft"
+        self.assertIsNone(gobocard.find(self.ob))
+        self.light.tla_gobo_choice = "gobo_ring"
+        self.light.tla_gobo_choice = "none"
+        self.assertIsNone(gobocard.find(self.ob))
+        self.assertNotIn(gobocard.MAT_KEY, self.light)
+
+    def test_card_shows_in_eevee_and_hides_in_cycles(self):
+        """Only one of card and light texture is ever active, so Cycles never gets the pattern twice."""
+        self.light.tla_gobo_choice = "gobo_leaf_breakup"
+        engines = [i.identifier for i in bpy.context.scene.render.bl_rna.properties["engine"].enum_items]
+        eevee = next(e for e in engines if "EEVEE" in e)
+        gobocard = self._card_engine(eevee)
+        card = gobocard.find(self.ob)
+        self.assertFalse(card.hide_render)
+        self.assertFalse(card.hide_viewport)
+        self._card_engine("CYCLES")
+        self.assertTrue(card.hide_render)
+        self.assertTrue(card.hide_viewport)
+        self._card_engine(eevee)
+        self.assertFalse(card.hide_render)
+
+    def test_card_is_not_a_snoot_and_undo_of_apply_restores_it(self):
+        gobocard = importlib.import_module(PKG + ".gobocard")
+        bpy.ops.tla.snoot_add()
+        bpy.context.view_layer.objects.active = self.ob
+        self.light.tla_gobo_choice = "gobo_slot"
+        self.assertIsNotNone(snoot.find(self.ob))
+        self.assertIsNone(snoot.find_handmade(self.ob))  # the card is never mistaken for a hand-built snoot
+        self.assertEqual(len([c for c in self.ob.children if c.get(gobocard.CARD_TAG)]), 1)
+        # the assistant's all-or-nothing apply puts the card back on failure
+        with self.assertRaises(Exception):
+            lightstate.apply_values(self.light, {"preset": "gobo_bars", "snoot_length": 2.0}, None)
+        self.assertEqual(lightstate.preset_state(self.light), "gobo_slot")
+        self.assertIsNotNone(gobocard.find(self.ob))
+
+    def test_files_from_older_versions_get_cards_on_load(self):
+        gobocard = importlib.import_module(PKG + ".gobocard")
+        self.light.tla_gobo_choice = "gobo_stars"
+        gobocard.remove(self.ob)  # what a 0.3.2 file looks like: a gobo, no card
+        gobocard._on_load()
+        self.assertIsNotNone(gobocard.find(self.ob))
+
     def test_preview_button_switches_to_cycles(self):
         bpy.context.scene.render.engine = "BLENDER_WORKBENCH"
         self.assertEqual(bpy.ops.tla.preview_gobos(), {"FINISHED"})

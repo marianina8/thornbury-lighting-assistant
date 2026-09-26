@@ -9,7 +9,7 @@ import bpy
 
 from . import client, jobs, lightstate, props, snoot
 
-CLIENT_VERSION = "0.3.2"
+CLIENT_VERSION = "0.4.0"
 
 
 def prefs(context=None):
@@ -149,8 +149,8 @@ class TLA_OT_apply(bpy.types.Operator):
             self.report({"ERROR"}, "Not applied; the light's settings are unchanged: %s" % e)
             return {"CANCELLED"}
         _report_outcome("edited" if edited else "applied", applied)
-        if "preset" in applied and applied["preset"] != "none" and context.scene.render.engine != "CYCLES":
-            self.report({"WARNING"}, "Applied. Gobo/IES presets only render in Cycles.")
+        if str(applied.get("preset", "")).startswith("ies_") and context.scene.render.engine != "CYCLES":
+            self.report({"WARNING"}, "Applied. Beam profiles (IES) only render in Cycles.")
         else:
             self.report({"INFO"}, "Applied. Ctrl+Z reverts it.")
         st.clear()

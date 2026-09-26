@@ -17,6 +17,8 @@ Not everyone can describe the look they want, so the panel also has a
 - **Thumbnails are real Cycles renders** of each gobo projected onto a wall through the addon's own node wiring (`tools/render_thumbs.py`). The picker shows what the light will look like, not the raw black-and-white image.
 - **Rotate, Size and Offset** sliders reshape the gobo live. A Mapping node in the gobo chain carries these, and gobos from older versions gain the transform the first time a slider moves.
 - **Add your own…** turns any image into a gobo, packed into the .blend. The assistant can still swap it for a library gobo.
+- Clicking a thumbnail puts it on the selected light at once; each light keeps its own pick. Linked duplicates (Alt+D) share settings, so the panel warns and offers to separate them.
+- Gobos only show in **Cycles, Rendered view** (EEVEE and Material Preview don't draw light node textures); the panel offers a one-click switch.
 - Each pick is one undo step and works offline. The notes assistant knows the library too, but only if its backend is deployed from this version.
 
 ![Gobo library, rendered](docs/img/gobo-library.png)
@@ -132,7 +134,7 @@ API: `GET /v1/health`, `GET /v1/me` (usage; no model call),
 
 ## Install the plugin
 
-Download or build the zip (`make addon-zip` → `dist/thornbury_lighting-0.3.1.zip`),
+Download or build the zip (`make addon-zip` → `dist/thornbury_lighting-0.3.2.zip`),
 then in Blender 4.2+: **Edit > Preferences > Add-ons > ⌄ > Install from Disk…**.
 Snoots, gobos and beam profiles work straight away. No account, key or internet
 is needed.

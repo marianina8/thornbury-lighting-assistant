@@ -8,7 +8,7 @@ backend with [docs/self-host.md](self-host.md).
 
 ## 1. Install (about 2 minutes)
 
-1. Download `thornbury_lighting-0.3.1.zip`. Don't unzip it.
+1. Download `thornbury_lighting-0.3.2.zip`. Don't unzip it.
 2. In Blender: **Edit > Preferences > Get Extensions** (or **Add-ons**), open the
    **⌄** menu at the top right, choose **Install from Disk…**, and pick the zip.
 3. Still in Preferences, open **System > Network** and make sure
@@ -45,8 +45,9 @@ the snoot*.
 **Pick a gobo by looking at it.** Select a spot light and open the **Gobo**
 box in the panel. Click the big thumbnail to open a grid of 24 gobos (windows
 and blinds, foliage and breakup, shapes and cuts, graphic patterns). Each
-thumbnail is a real render of that gobo on a wall. Pick one and click **Use
-this gobo**. Then **Rotate**, **Size** and **Offset** reshape it live. **Add your
+thumbnail is a real render of that gobo on a wall. Click one and it goes
+straight onto the selected light (only that light). Then **Rotate**, **Size**
+and **Offset** reshape it live. **Add your
 own…** turns any image into a gobo (white lets light through, black blocks it,
 colours tint it). The **Beam profile** grid below it works the same way for IES
 profiles. No note and no internet needed; Ctrl+Z undoes each pick.
@@ -57,7 +58,13 @@ like barn doors", "remove the gobo". It deliberately refuses placement or taste
 notes ("move the key left", "make it more cinematic"): it only sets the
 light's own controls.
 
-Gobo and IES presets only show up in **Cycles** renders.
+**To see a gobo you need Cycles and Rendered view.** Gobos are textures on
+the light, and only Cycles draws those: Material Preview, Solid and EEVEE
+show nothing. If you're not there yet, the panel shows a **Show Gobos in the
+Viewport** button that switches the engine to Cycles and the 3D view to
+Rendered. If lights were made with Alt+D they share their settings, so a gobo
+lands on all of them; the panel warns you and offers **Make This Light
+Separate**.
 
 ## 3. What gets sent
 

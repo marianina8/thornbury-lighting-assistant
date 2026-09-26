@@ -9,7 +9,7 @@ import bpy
 
 from . import client, jobs, lightstate, props, snoot
 
-CLIENT_VERSION = "0.3.1"
+CLIENT_VERSION = "0.3.2"
 
 
 def prefs(context=None):

@@ -571,18 +571,56 @@ class AddonTests(unittest.TestCase):
         self.assertEqual(len(gallery.ies_items(None, bpy.context)), 4)
         self.assertEqual(len({i[4] for i in gobos}), len(gobos))  # unique enum numbers
 
-    def test_pick_and_use_a_gobo_then_a_profile(self):
-        self.assertIn("UNDO", gallery.TLA_OT_gobo_use.bl_options)
-        wm = bpy.context.window_manager
-        wm.tla_pick_gobo = "gobo_window_arched"
-        self.assertEqual(bpy.ops.tla.gobo_use(kind="gobo"), {"FINISHED"})
+    def test_clicking_a_thumbnail_applies_it_to_this_light(self):
+        """Clicking in the grid sets the light's own choice, which applies the gobo at once."""
+        self.light.tla_gobo_choice = "gobo_window_arched"
         self.assertEqual(lightstate.preset_state(self.light), "gobo_window_arched")
-        wm.tla_pick_ies = "ies_narrow_spot"
-        bpy.ops.tla.gobo_use(kind="ies")
+        self.assertEqual(self.light.tla_gobo_choice, "gobo_window_arched")
+        self.assertEqual(self.light.tla_ies_choice, "none")
+        self.light.tla_ies_choice = "ies_narrow_spot"
         self.assertEqual(lightstate.preset_state(self.light), "ies_narrow_spot")  # one pattern at a time
-        wm.tla_pick_gobo = "none"
-        bpy.ops.tla.gobo_use(kind="gobo")
+        self.assertEqual(self.light.tla_gobo_choice, "none")
+        self.light.tla_gobo_choice = "none"  # "No gobo" leaves the profile alone
+        self.assertEqual(lightstate.preset_state(self.light), "ies_narrow_spot")
+        self.light.tla_ies_choice = "none"
         self.assertEqual(lightstate.preset_state(self.light), "none")
+        # The operator (used by scripts) does the same, as one undo step.
+        self.assertIn("UNDO", gallery.TLA_OT_gobo_use.bl_options)
+        self.assertEqual(bpy.ops.tla.gobo_use(preset="gobo_bars"), {"FINISHED"})
+        self.assertEqual(lightstate.preset_state(self.light), "gobo_bars")
+
+    def test_each_light_keeps_its_own_gobo(self):
+        """Marian's report: picking a gobo seemed to put it on every light (the pick was window-wide)."""
+        L2 = bpy.data.lights.new("Other", "SPOT")
+        ob2 = bpy.data.objects.new("Other", L2)
+        bpy.context.scene.collection.objects.link(ob2)
+        self.light.tla_gobo_choice = "gobo_leaf_breakup"
+        self.assertEqual(lightstate.preset_state(L2), "none")
+        self.assertEqual(L2.tla_gobo_choice, "none")  # the grid shows nothing picked on the other light
+        L2.tla_gobo_choice = "gobo_dots"
+        self.assertEqual(lightstate.preset_state(self.light), "gobo_leaf_breakup")
+        self.assertEqual(lightstate.preset_state(L2), "gobo_dots")
+
+    def test_linked_duplicates_can_be_made_separate(self):
+        """Alt+D lights share one data-block, so a gobo lands on all of them; the panel offers to split them."""
+        ob2 = bpy.data.objects.new("Linked", self.light)
+        bpy.context.scene.collection.objects.link(ob2)
+        self.assertEqual(self.light.users, 2)
+        bpy.ops.tla.snoot_add()
+        bpy.context.view_layer.objects.active = self.ob
+        self.assertEqual(bpy.ops.tla.make_light_unique(), {"FINISHED"})
+        self.assertIsNot(self.ob.data, ob2.data)
+        self.ob.data.tla_gobo_choice = "gobo_ring"
+        self.assertEqual(lightstate.preset_state(ob2.data), "none")
+        s = snoot.find(self.ob)
+        target = s.animation_data.drivers[0].driver.variables[0].targets[0].id
+        self.assertIs(target, self.ob.data)  # the snoot follows the separated light
+
+    def test_preview_button_switches_to_cycles(self):
+        bpy.context.scene.render.engine = "BLENDER_WORKBENCH"
+        self.assertEqual(bpy.ops.tla.preview_gobos(), {"FINISHED"})
+        self.assertEqual(bpy.context.scene.render.engine, "CYCLES")
+        gallery._viewport_shows_gobos(bpy.context)  # must not crash, with or without a 3D view
 
     def test_picker_refuses_custom_node_trees_and_area_lights(self):
         self.light.use_nodes = True
@@ -650,23 +688,20 @@ class AddonTests(unittest.TestCase):
         self.assertEqual(lightstate.preset_state(self.light), "broken")
         self.assertTrue(gallery.TLA_OT_gobo_use.poll(bpy.context))
         self.assertEqual(lightstate.read_state(self.light, self.ob)["preset"], "none")
-        bpy.context.window_manager.tla_pick_gobo = "gobo_ring"
-        bpy.ops.tla.gobo_use(kind="gobo")
+        self.light.tla_gobo_choice = "gobo_ring"
         self.assertEqual(lightstate.preset_state(self.light), "gobo_ring")
 
     def test_picker_numbers_are_stable_and_stale_picks_are_refused(self):
         bpy.ops.tla.gobo_add_image(filepath=self._png("aaa"))
         bpy.ops.tla.gobo_add_image(filepath=self._png("bbb"))
-        wm = bpy.context.window_manager
         b = lightstate.preset_state(self.light)
-        wm.tla_pick_gobo = b
         a_img = next(i for i in bpy.data.images if i.name.startswith("aaa"))
         bpy.data.images.remove(a_img)
-        self.assertEqual(wm.tla_pick_gobo, b)  # still the same image, not a neighbour
+        self.assertEqual(self.light.tla_gobo_choice, b)  # still the same image, not a neighbour
         bpy.data.images.remove(lightstate.user_gobo_image(b))
         self.assertEqual(bpy.ops.tla.gobo_use.poll(), True)
         with self.assertRaises(RuntimeError):  # refused with a message, no silent no-op
-            bpy.ops.tla.gobo_use(kind="gobo")
+            bpy.ops.tla.gobo_use(preset=b)
 
     def test_add_your_own_never_takes_over_an_existing_image(self):
         path = self._png("wall_tex")
@@ -705,11 +740,10 @@ class AddonTests(unittest.TestCase):
         bpy.context.preferences.system.use_online_access = False
         try:
             self.assertEqual(bpy.ops.tla.snoot_add(), {"FINISHED"})
-            bpy.context.window_manager.tla_pick_gobo = "gobo_leaf_breakup"
-            self.assertEqual(bpy.ops.tla.gobo_use(kind="gobo"), {"FINISHED"})
+            self.light.tla_gobo_choice = "gobo_leaf_breakup"
+            self.assertEqual(lightstate.preset_state(self.light), "gobo_leaf_breakup")
             self.light.tla_gobo_rotation = 0.5
-            bpy.context.window_manager.tla_pick_ies = "ies_wide_flood"
-            self.assertEqual(bpy.ops.tla.gobo_use(kind="ies"), {"FINISHED"})
+            self.assertEqual(bpy.ops.tla.gobo_use(preset="ies_wide_flood"), {"FINISHED"})
             self.assertEqual(bpy.ops.tla.snoot_remove(), {"FINISHED"})
             L, ob = self._area()
             bpy.context.view_layer.objects.active = ob
